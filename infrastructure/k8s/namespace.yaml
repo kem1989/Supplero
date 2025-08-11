@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: supplero
+  labels:
+    name: supplero
+    environment: production
+    app: supplero
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: supplero-staging
+  labels:
+    name: supplero-staging
+    environment: staging
+    app: supplero 
