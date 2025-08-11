@@ -126,6 +126,36 @@ def get_current_user(
         raise credentials_exception
 
 
+def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """Get the current authenticated user if available, otherwise return None."""
+    try:
+        payload = verify_token(credentials.credentials)
+        if payload is None:
+            return None
+        
+        user_id: int = payload.get("user_id")
+        if user_id is None:
+            return None
+        
+        user = db.query(User).filter(User.id == user_id).first()
+        if user is None:
+            return None
+        
+        # Log successful authentication
+        logger.info("User authenticated successfully (optional)", user_id=user.id, email=user.email)
+        return user
+        
+    except JWTError as e:
+        logger.debug("JWT token validation failed (optional)", error=str(e))
+        return None
+    except Exception as e:
+        logger.debug("Authentication error (optional)", error=str(e))
+        return None
+
+
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     """Get the current active user."""
     if not current_user.is_active:
