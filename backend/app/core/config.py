@@ -101,6 +101,26 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_AI_REQUESTS: int = 10
     AI_REQUEST_TIMEOUT: int = 300  # 5 minutes
     
+    # Audit & Retention Policies
+    AUDIT_RETENTION_DAYS: int = 2555  # 7 years for compliance
+    AUDIT_ARCHIVE_DAYS: int = 365  # Archive after 1 year
+    AUDIT_MAX_LOG_SIZE_MB: int = 100  # Max size for individual audit logs
+    AUDIT_COMPRESSION_ENABLED: bool = True  # Enable compression for archived logs
+    AUDIT_ENCRYPTION_ENABLED: bool = True  # Enable encryption for archived logs
+    
+    # Audit Access Controls
+    AUDIT_ADMIN_ROLES: List[str] = ["admin", "auditor", "compliance_officer"]
+    AUDIT_VIEWER_ROLES: List[str] = ["manager", "viewer"]
+    AUDIT_EXPORT_ROLES: List[str] = ["admin", "auditor", "compliance_officer"]
+    AUDIT_DELETE_ROLES: List[str] = ["admin"]  # Only admins can delete audit data
+    
+    # Audit Storage
+    AUDIT_STORAGE_TYPE: str = "database"  # database, file, s3, elasticsearch
+    AUDIT_ARCHIVE_STORAGE: str = "file"  # file, s3, elasticsearch
+    AUDIT_ARCHIVE_PATH: str = "./uploads/audit/archive"
+    AUDIT_BACKUP_ENABLED: bool = True
+    AUDIT_BACKUP_RETENTION_DAYS: int = 3650  # 10 years for backups
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

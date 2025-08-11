@@ -579,4 +579,14 @@ secure_storage = SecureStorageService()
 
 def get_secure_storage() -> SecureStorageService:
     """Get the global secure storage service instance."""
-    return secure_storage 
+    return secure_storage
+
+
+def encrypt_data(data: bytes) -> bytes:
+    """Encrypt data using the global secure storage service."""
+    return secure_storage.fernet.encrypt(data)
+
+
+def decrypt_data(encrypted_data: bytes) -> bytes:
+    """Decrypt data using the global secure storage service."""
+    return secure_storage.fernet.decrypt(encrypted_data) 
