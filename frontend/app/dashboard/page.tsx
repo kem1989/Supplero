@@ -89,6 +89,14 @@ export default function DashboardPage() {
                   </svg>
                 </div>
                 <h1 className="text-xl font-bold text-white">Supplero Dashboard</h1>
+                <nav className="hidden md:flex items-center space-x-2 text-sm text-slate-400">
+                  <span>/</span>
+                  <a href="/contract-discovery" className="hover:text-blue-400 transition-colors">Contract Discovery</a>
+                  <span>/</span>
+                  <a href="/documents" className="hover:text-blue-400 transition-colors">Documents</a>
+                  <span>/</span>
+                  <a href="/audit" className="hover:text-blue-400 transition-colors">Audit</a>
+                </nav>
               </div>
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-3">
@@ -121,6 +129,63 @@ export default function DashboardPage() {
           <div className="mb-8">
             <h2 className="text-3xl font-bold text-white mb-2">Welcome back, {user?.first_name || user?.username}!</h2>
             <p className="text-slate-400">Here's what's happening with your account today.</p>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="mb-8">
+            <h3 className="text-xl font-bold text-white mb-4">Quick Actions</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <a
+                href="/contract-discovery"
+                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-semibold text-white">Contract Discovery</h4>
+                    <p className="text-slate-400 text-sm">AI-powered contract search and analysis</p>
+                  </div>
+                </div>
+              </a>
+              
+              <a
+                href="/documents"
+                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-semibold text-white">Documents</h4>
+                    <p className="text-slate-400 text-sm">Upload and manage documents</p>
+                  </div>
+                </div>
+              </a>
+              
+              <a
+                href="/audit"
+                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group"
+              >
+                <div className="flex items-center space-x-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-orange-500 to-red-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-semibold text-white">Audit & Compliance</h4>
+                    <p className="text-slate-400 text-sm">View audit logs and compliance data</p>
+                  </div>
+                </div>
+              </a>
+            </div>
           </div>
 
           {/* Stats Grid */}

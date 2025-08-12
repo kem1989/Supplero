@@ -108,16 +108,27 @@ Enterprises are struggling with outdated, manual, and reactive procurement proce
   - Enforce organization/role filters in all retrieval queries
 
 - [ ] **Natural Language Interface & Lightweight Orchestrator** ⭐ **NEW: Cursor-Style Interaction**
-  - `POST /api/v1/assistant/query` - Single chat endpoint for natural language queries and actions
-  - **Lightweight Orchestrator** in backend (`app/services/ai/`): intent routing + tool registry (no external agentic framework for MVP)
-  - **OpenAI Function Calling**: structured tool schemas for contract search, clause extraction, supplier risk retrieval, and alerts
-  - **Retrieval**: Elasticsearch-backed keyword + embeddings search (OpenAI embeddings) for contracts and suppliers
-  - **Guardrails**: RBAC + organization scoping enforced per tool call; prompt/output redaction; cost/latency budgets
-  - **Observability**: Leverages platform baseline for structured logs, traces, and audits
+  - **Intent Recognition & Query Processing**: Route natural language queries to appropriate tools (SEARCH_CONTRACTS, GET_DETAILS, EXPORT) with >90% accuracy
+  - **Contract Discovery Engine**: AI-powered search using extracted metadata for fast (<500ms) contract discovery by supplier, amount, date, and document type
+  - **Smart Response Generation**: OpenAI integration for query understanding, parameter extraction, and natural language responses with actionable insights
+  - **Tool Registry & Orchestration**: Centralized management of AI capabilities with intelligent tool selection, chaining, and multi-tool result aggregation
+  - **Performance & Quality Standards**: <2s response time for complex queries, >80% parameter parsing accuracy, complete audit logging, and graceful error handling
 
 - [ ] **Assistant Alpha Scope** ⭐ **NEW: MVP Boundaries**
-  - Supported: contract search, clause lookup, summarize/highlight in viewer, export list
-  - Deferred to Month 3: supplier risk Q&A, watchlists, and risk alert creation
+  - **Phase 1 (Week 1)**: Contract discovery and basic search capabilities
+    - Contract search by supplier, amount, date, document type
+    - Basic metadata lookup and filtering
+    - Simple export and result formatting
+  - **Phase 2 (Week 2)**: Enhanced search and intelligent responses
+    - Complex query parsing and parameter extraction
+    - Smart result formatting with insights and alerts
+    - Advanced filtering and result presentation
+  - **Phase 3 (Week 3)**: Tool orchestration and complex workflows
+    - Multi-tool query processing and result aggregation
+    - Context-aware conversations and follow-up queries
+    - Advanced export and reporting capabilities
+  - **Deferred to Month 3**: Supplier risk Q&A, watchlists, and risk alert creation
+  - **Deferred to Month 4**: Clause extraction, contract analysis, and advanced analytics
 
 ### Month 3: Basic Predictive Supplier Risk & Integration
 - [ ] **Supplier Data Ingestion & Basic Profiling**

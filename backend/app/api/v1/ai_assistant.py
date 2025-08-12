@@ -260,6 +260,114 @@ async def get_available_tools(
         )
 
 
+@router.post("/search-contracts")
+async def search_contracts(
+    request: NaturalLanguageQueryRequest,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    sort_by: str = Query("relevance", regex="^(relevance|date|amount)$"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Dedicated endpoint for contract search with natural language queries.
+    
+    This endpoint:
+    1. Processes natural language queries for contract search
+    2. Uses the Elasticsearch service for fast (<500ms) search
+    3. Returns AI-generated insights along with search results
+    """
+    try:
+        logger.info(
+            "Processing contract search request",
+            user_id=current_user.id,
+            organization_id=current_user.organization_id,
+            query=request.query,
+            page=page,
+            page_size=page_size
+        )
+        
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Process the query to extract intent and parameters
+        query_intent = await ai_service.process_query(
+            query=request.query,
+            user_context={
+                "user_id": current_user.id,
+                "organization_id": current_user.organization_id,
+                "role": current_user.role
+            }
+        )
+        
+        # Validate that this is a search intent
+        if query_intent.intent != IntentType.SEARCH_CONTRACTS:
+            return JSONResponse(
+                status_code=400,
+                content={
+                    "error": "Query is not a contract search request",
+                    "detected_intent": query_intent.intent.value,
+                    "suggested_action": "Use a search-related query like 'Find contracts with supplier ABC Corp'"
+                }
+            )
+        
+        # Extract search parameters
+        filters = {
+            "supplier": query_intent.parameters.get("supplier"),
+            "amount_min": query_intent.parameters.get("amount_min"),
+            "amount_max": query_intent.parameters.get("amount_max"),
+            "date_from": query_intent.parameters.get("date_from"),
+            "date_to": query_intent.parameters.get("date_to"),
+            "document_type": query_intent.parameters.get("document_type"),
+            "tags": query_intent.parameters.get("tags"),
+            "organization_id": current_user.organization_id
+        }
+        
+        # Remove None values
+        filters = {k: v for k, v in filters.items() if v is not None}
+        
+        # Execute search
+        search_result = await ai_service.search_contracts(
+            query=request.query,
+            filters=filters,
+            page=page,
+            page_size=page_size,
+            sort_by=sort_by
+        )
+        
+        # Add query processing metadata
+        search_result["query_processing"] = {
+            "intent": query_intent.intent.value,
+            "confidence": query_intent.confidence,
+            "extracted_parameters": query_intent.parameters,
+            "confidence_threshold_met": query_intent.confidence >= 0.9
+        }
+        
+        logger.info(
+            "Contract search completed successfully",
+            user_id=current_user.id,
+            query=request.query,
+            results_count=search_result.get("total_count", 0),
+            search_time_ms=search_result.get("search_time_ms", 0),
+            performance_met=search_result.get("performance_met", False)
+        )
+        
+        return search_result
+        
+    except Exception as e:
+        logger.error(
+            "Contract search failed",
+            user_id=current_user.id,
+            query=request.query,
+            error=str(e)
+        )
+        
+        raise HTTPException(
+            status_code=500,
+            detail=f"Contract search failed: {str(e)}"
+        )
+
+
 async def _execute_tool_for_intent(
     query_intent: QueryIntent,
     db: Session,
@@ -331,14 +439,56 @@ async def _execute_search_contracts(
     current_user: User
 ) -> Dict[str, Any]:
     """Execute contract search based on extracted parameters"""
-    # TODO: Implement actual contract search logic
-    # For now, return mock data
-    return {
-        "message": "Contract search executed",
-        "parameters_used": parameters,
-        "results_count": 0,
-        "search_criteria": parameters
-    }
+    try:
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Extract search parameters
+        query = parameters.get("query", "")
+        filters = {
+            "supplier": parameters.get("supplier"),
+            "amount_min": parameters.get("amount_min"),
+            "amount_max": parameters.get("amount_max"),
+            "date_from": parameters.get("date_from"),
+            "date_to": parameters.get("date_to"),
+            "document_type": parameters.get("document_type"),
+            "tags": parameters.get("tags"),
+            "organization_id": current_user.organization_id
+        }
+        
+        # Remove None values
+        filters = {k: v for k, v in filters.items() if v is not None}
+        
+        # Execute search using AI assistant service
+        search_result = await ai_service.search_contracts(
+            query=query,
+            filters=filters,
+            page=1,
+            page_size=20,
+            sort_by="relevance"
+        )
+        
+        return {
+            "message": "Contract search executed successfully",
+            "parameters_used": parameters,
+            "search_results": search_result,
+            "search_criteria": filters,
+            "performance_met": search_result.get("performance_met", False)
+        }
+        
+    except Exception as e:
+        logger.error("Contract search execution failed", error=str(e))
+        return {
+            "message": "Contract search failed",
+            "parameters_used": parameters,
+            "error": str(e),
+            "search_results": {
+                "documents": [],
+                "total_count": 0,
+                "search_time_ms": 0
+            },
+            "performance_met": False
+        }
 
 
 async def _execute_get_details(

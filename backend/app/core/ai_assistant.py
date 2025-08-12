@@ -12,6 +12,7 @@ import structlog
 
 from app.core.config import settings
 from app.core.logging import get_logger
+from app.core.elasticsearch_service import ElasticsearchService
 
 logger = get_logger(__name__)
 
@@ -56,6 +57,7 @@ class AIAssistantService:
     def __init__(self):
         self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         self.tools = self._initialize_tools()
+        self.elasticsearch_service = ElasticsearchService()
         
     def _initialize_tools(self) -> Dict[str, Dict[str, Any]]:
         """Initialize the available tools registry"""
@@ -364,6 +366,116 @@ Use null for missing parameters.
         """Get information about available tools"""
         return self.tools
     
+    async def search_contracts(
+        self,
+        query: Optional[str] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        page: int = 1,
+        page_size: int = 20,
+        sort_by: str = "relevance"
+    ) -> Dict[str, Any]:
+        """
+        Search contracts using the Elasticsearch service
+        
+        Args:
+            query: Text query for semantic search
+            filters: Search filters (supplier, amount, date, etc.)
+            page: Page number for pagination
+            page_size: Number of results per page
+            sort_by: Sort method (relevance, date, amount)
+            
+        Returns:
+            Dictionary containing search results and performance metrics
+        """
+        try:
+            logger.info(
+                "Executing contract search via AI assistant",
+                query=query,
+                filters=filters,
+                page=page,
+                page_size=page_size
+            )
+            
+            # Use Elasticsearch service for fast search
+            search_result = await self.elasticsearch_service.search_contracts(
+                query=query,
+                filters=filters,
+                page=page,
+                page_size=page_size,
+                sort_by=sort_by
+            )
+            
+            # Convert to dictionary format
+            result = search_result.to_dict()
+            
+            # Add AI-generated insights if query is provided
+            if query and result["documents"]:
+                result["ai_insights"] = await self._generate_search_insights(
+                    query, result["documents"]
+                )
+            
+            logger.info(
+                "Contract search completed successfully",
+                results_count=len(result["documents"]),
+                search_time_ms=result["search_time_ms"],
+                performance_met=result["performance_met"]
+            )
+            
+            return result
+            
+        except Exception as e:
+            logger.error("Contract search failed in AI assistant", error=str(e))
+            return {
+                "documents": [],
+                "total_count": 0,
+                "search_time_ms": 0,
+                "query": query or "",
+                "filters_applied": filters or {},
+                "error": str(e),
+                "performance_met": False
+            }
+    
+    async def _generate_search_insights(
+        self, 
+        query: str, 
+        documents: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Generate AI insights for search results"""
+        try:
+            # Prepare context for OpenAI
+            context = f"""
+            Query: {query}
+            Found {len(documents)} contracts.
+            
+            Top results:
+            {chr(10).join([f"- {doc.get('supplier_name', 'Unknown')}: ${doc.get('contract_amount', 0):,.0f} ({doc.get('contract_type', 'contract')})" for doc in documents[:5]])}
+            """
+            
+            response = await self._call_openai(
+                messages=[
+                    {"role": "system", "content": "You are a procurement expert. Provide brief insights about the search results."},
+                    {"role": "user", "content": f"Analyze these contract search results and provide 2-3 key insights: {context}"}
+                ],
+                temperature=0.3,
+                max_tokens=200
+            )
+            
+            return {
+                "summary": response.strip(),
+                "total_contracts": len(documents),
+                "total_value": sum(doc.get("contract_amount", 0) for doc in documents if doc.get("contract_amount")),
+                "suppliers_count": len(set(doc.get("supplier_name") for doc in documents if doc.get("supplier_name")))
+            }
+            
+        except Exception as e:
+            logger.warning("Failed to generate search insights", error=str(e))
+            return {
+                "summary": "Unable to generate insights at this time.",
+                "total_contracts": len(documents),
+                "total_value": 0,
+                "suppliers_count": 0
+            }
+    
     def validate_intent_confidence(self, intent: QueryIntent) -> bool:
         """
         Validate if the intent confidence meets the required threshold (>90%).
@@ -383,3 +495,4 @@ class IntentClassificationResult:
     def __init__(self, intent: IntentType, confidence: float):
         self.intent = intent
         self.confidence = confidence
+

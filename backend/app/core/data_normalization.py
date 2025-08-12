@@ -17,6 +17,8 @@ from app.core.format_detection import FormatDetectionEngine, FormatDetectionResu
 from app.core.standardized_representation import StandardizationEngine, StandardizedDocument
 from app.core.quality_validation import QualityValidator, ValidationResult
 from app.core.document_storage import DocumentStorage
+from app.core.metadata_extraction import MetadataExtractionEngine, ExtractionResult
+from app.schemas.document import ExtractedMetadata
 
 logger = get_logger(__name__)
 
@@ -42,11 +44,15 @@ class NormalizationResult:
     processing_duration: float  # seconds
     processing_timestamp: datetime
     success: bool
+    
+    # Optional fields
     error_message: Optional[str] = None
+    metadata_extraction: Optional[ExtractionResult] = None
+    extracted_metadata: Optional[ExtractedMetadata] = None
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for storage/transmission"""
-        return {
+        result = {
             'document_id': self.document_id,
             'original_filename': self.original_filename,
             'format_detection': {
@@ -75,6 +81,27 @@ class NormalizationResult:
             'success': self.success,
             'error_message': self.error_message
         }
+        
+        # Add metadata extraction results if available
+        if self.metadata_extraction:
+            result['metadata_extraction'] = {
+                'entities_count': len(self.metadata_extraction.entities),
+                'overall_confidence': self.metadata_extraction.overall_confidence,
+                'extraction_methods_used': [m.value for m in self.metadata_extraction.extraction_methods_used],
+                'processing_duration': self.metadata_extraction.processing_duration
+            }
+        
+        if self.extracted_metadata:
+            result['extracted_metadata'] = {
+                'dates_count': len(self.extracted_metadata.dates),
+                'amounts_count': len(self.extracted_metadata.amounts),
+                'parties_count': len(self.extracted_metadata.parties),
+                'document_type': self.extracted_metadata.document_type,
+                'language': self.extracted_metadata.language,
+                'confidence_score': self.extracted_metadata.confidence_score
+            }
+        
+        return result
 
 
 class DataNormalizationService:
@@ -88,6 +115,7 @@ class DataNormalizationService:
         self.format_detection_engine = FormatDetectionEngine()
         self.standardization_engine = StandardizationEngine()
         self.quality_validator = QualityValidator()
+        self.metadata_extraction_engine = MetadataExtractionEngine()
         self.logger = get_logger(__name__)
     
     async def normalize_document(
@@ -98,6 +126,7 @@ class DataNormalizationService:
         user_id: int,
         analyze_content: bool = True,
         validate_quality: bool = True,
+        extract_metadata: bool = True,
         store_result: bool = True
     ) -> NormalizationResult:
         """
@@ -110,6 +139,7 @@ class DataNormalizationService:
             user_id: User ID who uploaded the document
             analyze_content: Whether to perform deep content analysis
             validate_quality: Whether to perform quality validation
+            extract_metadata: Whether to extract and normalize metadata
             store_result: Whether to store the result in document storage
             
         Returns:
@@ -125,7 +155,8 @@ class DataNormalizationService:
                 filename=original_filename,
                 organization_id=organization_id,
                 analyze_content=analyze_content,
-                validate_quality=validate_quality
+                validate_quality=validate_quality,
+                extract_metadata=extract_metadata
             )
             
             # Step 1: Intelligent Format Detection
@@ -146,11 +177,52 @@ class DataNormalizationService:
                 # Create a minimal validation result
                 validation_result = self._create_minimal_validation_result(standardized_doc)
             
-            # Step 4: Store result if requested
+            # Step 4: Metadata Extraction and Normalization
+            metadata_extraction_result = None
+            extracted_metadata = None
+            if extract_metadata:
+                try:
+                    # Extract text content for metadata extraction
+                    text_content = standardized_doc.get_text_content()
+                    if text_content.strip():
+                        metadata_extraction_result = await self.metadata_extraction_engine.extract_metadata(
+                            text_content=text_content,
+                            document_category=format_result.category.value,
+                            use_openai=True
+                        )
+                        
+                        if metadata_extraction_result.success:
+                            extracted_metadata = self.metadata_extraction_engine.to_extracted_metadata(
+                                metadata_extraction_result
+                            )
+                            
+                            # Update standardized document with extracted metadata
+                            standardized_doc.extracted_metadata = extracted_metadata
+                            
+                            self.logger.info(
+                                "Metadata extraction completed",
+                                document_id=document_id,
+                                entities_count=len(metadata_extraction_result.entities),
+                                overall_confidence=metadata_extraction_result.overall_confidence
+                            )
+                        else:
+                            self.logger.warning(
+                                "Metadata extraction failed",
+                                document_id=document_id,
+                                error=metadata_extraction_result.error_message
+                            )
+                except Exception as e:
+                    self.logger.warning(
+                        "Metadata extraction failed, continuing without metadata",
+                        document_id=document_id,
+                        error=str(e)
+                    )
+            
+            # Step 5: Store result if requested
             if store_result:
                 await self._store_normalization_result(
                     document_id, organization_id, user_id, format_result, 
-                    standardized_doc, validation_result
+                    standardized_doc, validation_result, extracted_metadata
                 )
             
             # Calculate processing duration
@@ -164,6 +236,8 @@ class DataNormalizationService:
                 format_detection=format_result,
                 standardized_document=standardized_doc,
                 validation_result=validation_result,
+                metadata_extraction=metadata_extraction_result,
+                extracted_metadata=extracted_metadata,
                 processing_duration=processing_duration,
                 processing_timestamp=end_time,
                 success=True
@@ -177,7 +251,8 @@ class DataNormalizationService:
                 format_detected=format_result.detected_type,
                 confidence_score=format_result.confidence_score,
                 content_blocks=len(standardized_doc.content_blocks),
-                validation_score=validation_result.overall_score if validation_result else None
+                validation_score=validation_result.overall_score if validation_result else None,
+                metadata_entities=len(metadata_extraction_result.entities) if metadata_extraction_result else 0
             )
             
             return result
@@ -295,7 +370,8 @@ class DataNormalizationService:
         user_id: int,
         format_result: FormatDetectionResult,
         standardized_doc: StandardizedDocument,
-        validation_result: ValidationResult
+        validation_result: ValidationResult,
+        extracted_metadata: Optional[ExtractedMetadata] = None
     ):
         """Store normalization result in document storage"""
         
@@ -307,7 +383,8 @@ class DataNormalizationService:
                 user_id=user_id,
                 standardized_document=standardized_doc,
                 format_detection=format_result,
-                validation_result=validation_result
+                validation_result=validation_result,
+                extracted_metadata=extracted_metadata
             )
             
             self.logger.debug(
