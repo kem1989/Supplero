@@ -21,6 +21,7 @@ import pytesseract
 
 from app.core.logging import get_logger
 from app.core.format_detection import FormatDetectionResult, DocumentCategory
+from app.core.ocr_preprocessing import OCRPreprocessor
 
 logger = get_logger(__name__)
 
@@ -193,6 +194,7 @@ class StandardizationEngine:
     
     def __init__(self):
         self.logger = get_logger(__name__)
+        self.ocr_preprocessor = OCRPreprocessor()
     
     async def standardize_document(
         self,
@@ -371,28 +373,49 @@ class StandardizationEngine:
         std_doc: StandardizedDocument,
         format_result: FormatDetectionResult
     ):
-        """Standardize image document using OCR"""
+        """Standardize image document using enhanced OCR preprocessing"""
         try:
-            image = Image.open(io.BytesIO(file_content))
+            # Use the enhanced OCR preprocessor
+            ocr_result = await self.ocr_preprocessor.preprocess_and_ocr(
+                image_bytes=file_content,
+                filename=format_result.original_filename if hasattr(format_result, 'original_filename') else None,
+                apply_enhancement=True,
+                validate_quality=True
+            )
             
-            # Perform OCR
-            text_content = pytesseract.image_to_string(image)
-            
-            if text_content and text_content.strip():
-                # Create text content block from OCR
+            if ocr_result.extracted_text and ocr_result.extracted_text.strip():
+                # Create text content block from enhanced OCR
                 text_block = ContentBlock(
                     content_type=ContentType.TEXT,
-                    content=text_content.strip(),
-                    confidence_score=75,  # OCR typically has lower confidence
-                    quality=ContentQuality.FAIR,
+                    content=ocr_result.extracted_text.strip(),
+                    confidence_score=ocr_result.confidence_score,
+                    quality=self._map_ocr_quality_to_content_quality(ocr_result.ocr_quality_score),
                     position={'type': 'full_image'},
                     metadata={
-                        'ocr_engine': 'pytesseract',
-                        'image_dimensions': f"{image.width}x{image.height}",
-                        'image_mode': image.mode
+                        'ocr_engine': 'enhanced_pytesseract',
+                        'image_dimensions': ocr_result.metadata.get('original_dimensions', 'unknown'),
+                        'image_mode': ocr_result.metadata.get('original_mode', 'unknown'),
+                        'image_quality': ocr_result.image_quality.value,
+                        'image_quality_score': ocr_result.image_quality_score,
+                        'ocr_quality_score': ocr_result.ocr_quality_score,
+                        'preprocessing_steps': ocr_result.preprocessing_applied,
+                        'quality_indicators': ocr_result.quality_indicators,
+                        'recommendations': ocr_result.recommendations,
+                        'issues': ocr_result.issues
                     }
                 )
                 std_doc.add_content_block(text_block)
+                
+                # Log OCR processing details
+                self.logger.info(
+                    "Enhanced OCR processing completed",
+                    filename=format_result.original_filename if hasattr(format_result, 'original_filename') else 'unknown',
+                    image_quality=ocr_result.image_quality.value,
+                    ocr_quality=ocr_result.ocr_quality_score,
+                    confidence=ocr_result.confidence_score,
+                    preprocessing_steps=ocr_result.preprocessing_applied
+                )
+                
             else:
                 # No text detected
                 no_text_block = ContentBlock(
@@ -402,24 +425,37 @@ class StandardizationEngine:
                     quality=ContentQuality.POOR,
                     position={'type': 'full_image'},
                     metadata={
-                        'ocr_engine': 'pytesseract',
-                        'image_dimensions': f"{image.width}x{image.height}",
-                        'image_mode': image.mode,
-                        'no_text_detected': True
+                        'ocr_engine': 'enhanced_pytesseract',
+                        'image_quality': ocr_result.image_quality.value,
+                        'image_quality_score': ocr_result.image_quality_score,
+                        'preprocessing_steps': ocr_result.preprocessing_applied,
+                        'recommendations': ocr_result.recommendations,
+                        'issues': ocr_result.issues
                     }
                 )
                 std_doc.add_content_block(no_text_block)
                 
         except Exception as e:
-            self.logger.warning(f"Image standardization failed: {e}")
+            self.logger.warning(f"Enhanced image standardization failed: {e}")
             fallback_block = ContentBlock(
                 content_type=ContentType.TEXT,
-                content="[Image processing failed]",
+                content="[Enhanced image processing failed]",
                 confidence_score=0,
                 quality=ContentQuality.POOR,
                 metadata={'error': str(e)}
             )
             std_doc.add_content_block(fallback_block)
+    
+    def _map_ocr_quality_to_content_quality(self, ocr_quality_score: int) -> ContentQuality:
+        """Map OCR quality score to ContentQuality enum"""
+        if ocr_quality_score >= 90:
+            return ContentQuality.EXCELLENT
+        elif ocr_quality_score >= 70:
+            return ContentQuality.GOOD
+        elif ocr_quality_score >= 50:
+            return ContentQuality.FAIR
+        else:
+            return ContentQuality.POOR
     
     async def _standardize_text(
         self, 

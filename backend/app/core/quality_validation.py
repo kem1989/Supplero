@@ -15,6 +15,7 @@ import logging
 
 from app.core.logging import get_logger
 from app.core.standardized_representation import StandardizedDocument, ContentBlock, ContentType, ContentQuality
+from app.core.ocr_preprocessing import ImageQuality, OCRConfidence
 
 logger = get_logger(__name__)
 
@@ -287,6 +288,10 @@ class QualityValidator:
         for i, block in enumerate(text_blocks):
             if block.content_type == ContentType.TEXT:
                 await self._validate_text_content(block, f"content_blocks[{i}]", result)
+                
+                # Additional OCR-specific validation for image-derived content
+                if self._is_ocr_derived_content(block):
+                    await self._validate_ocr_quality(block, f"content_blocks[{i}]", result)
     
     async def _validate_format_consistency(
         self, 
@@ -507,6 +512,105 @@ class QualityValidator:
                 message="Content contains excessive whitespace",
                 field_path=f"{field_path}.content",
                 suggestion="Clean up excessive whitespace for better readability"
+            ))
+    
+    def _is_ocr_derived_content(self, block: ContentBlock) -> bool:
+        """Check if content block was derived from OCR processing"""
+        metadata = block.metadata or {}
+        return (
+            metadata.get('ocr_engine') in ['pytesseract', 'enhanced_pytesseract'] or
+            'ocr_quality_score' in metadata or
+            'image_quality' in metadata
+        )
+    
+    async def _validate_ocr_quality(self, block: ContentBlock, field_path: str, result: ValidationResult):
+        """Validate OCR-specific quality metrics"""
+        metadata = block.metadata or {}
+        
+        # Check OCR quality score
+        ocr_quality = metadata.get('ocr_quality_score')
+        if ocr_quality is not None:
+            if ocr_quality < 30:
+                result.add_issue(ValidationIssue(
+                    rule=ValidationRule.CONTENT_QUALITY,
+                    severity=ValidationSeverity.CRITICAL,
+                    message="OCR quality is critically low",
+                    field_path=f"{field_path}.metadata.ocr_quality_score",
+                    actual_value=ocr_quality,
+                    suggestion="Manual review required - consider rescanning or preprocessing"
+                ))
+            elif ocr_quality < 50:
+                result.add_issue(ValidationIssue(
+                    rule=ValidationRule.CONTENT_QUALITY,
+                    severity=ValidationSeverity.HIGH,
+                    message="OCR quality is very low",
+                    field_path=f"{field_path}.metadata.ocr_quality_score",
+                    actual_value=ocr_quality,
+                    suggestion="Review extracted text for accuracy and consider preprocessing"
+                ))
+            elif ocr_quality < 70:
+                result.add_issue(ValidationIssue(
+                    rule=ValidationRule.CONTENT_QUALITY,
+                    severity=ValidationSeverity.MEDIUM,
+                    message="OCR quality is moderate",
+                    field_path=f"{field_path}.metadata.ocr_quality_score",
+                    actual_value=ocr_quality,
+                    suggestion="Review critical information for accuracy"
+                ))
+        
+        # Check image quality
+        image_quality = metadata.get('image_quality')
+        if image_quality:
+            if image_quality == 'poor':
+                result.add_issue(ValidationIssue(
+                    rule=ValidationRule.CONTENT_QUALITY,
+                    severity=ValidationSeverity.HIGH,
+                    message="Source image quality is poor",
+                    field_path=f"{field_path}.metadata.image_quality",
+                    actual_value=image_quality,
+                    suggestion="Consider rescanning at higher resolution or better settings"
+                ))
+            elif image_quality == 'fair':
+                result.add_issue(ValidationIssue(
+                    rule=ValidationRule.CONTENT_QUALITY,
+                    severity=ValidationSeverity.HIGH,
+                    message="Source image quality could be improved",
+                    field_path=f"{field_path}.metadata.image_quality",
+                    actual_value=image_quality,
+                    suggestion="Consider applying additional preprocessing steps"
+                ))
+        
+        # Check for preprocessing issues
+        preprocessing_steps = metadata.get('preprocessing_steps', [])
+        if 'preprocessing_failed' in preprocessing_steps:
+            result.add_issue(ValidationIssue(
+                rule=ValidationRule.CONTENT_QUALITY,
+                severity=ValidationSeverity.HIGH,
+                message="Image preprocessing failed",
+                field_path=f"{field_path}.metadata.preprocessing_steps",
+                actual_value=preprocessing_steps,
+                suggestion="Check image format and try alternative preprocessing methods"
+            ))
+        
+        # Check for OCR-specific issues
+        issues = metadata.get('issues', [])
+        for issue in issues:
+            if 'critically low' in issue.lower():
+                severity = ValidationSeverity.HIGH
+            elif 'very low' in issue.lower() or 'poor' in issue.lower():
+                severity = ValidationSeverity.HIGH
+            elif 'moderate' in issue.lower() or 'fair' in issue.lower():
+                severity = ValidationSeverity.MEDIUM
+            else:
+                severity = ValidationSeverity.LOW
+            
+            result.add_issue(ValidationIssue(
+                rule=ValidationRule.CONTENT_QUALITY,
+                severity=severity,
+                message=f"OCR issue: {issue}",
+                field_path=f"{field_path}.metadata.issues",
+                actual_value=issue,
+                suggestion="Review OCR processing results and consider manual correction"
             ))
     
     async def _validate_dates_in_content(
