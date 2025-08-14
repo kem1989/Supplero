@@ -9,8 +9,8 @@ interface ProcessingStatusProps {
 }
 
 interface ProcessingDocument {
-  id: number;
-  filename: string;
+  document_id: number;  // Backend returns document_id, not id
+  filename: string;      // Backend returns filename, not original_filename
   status: string;
   progress: number;
   current_step: string;
@@ -33,14 +33,14 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
     try {
       const response = await api.get('/documents', {
         params: {
-          status: 'uploaded,processing,ocr_processing'
+          status: 'UPLOADED,PROCESSING,OCR_PROCESSING'
         }
       });
       
       const documents = response.data.documents || [];
       const processing = documents.map((doc: any) => ({
-        id: doc.id,
-        filename: doc.original_filename,
+        document_id: doc.document_id,
+        filename: doc.filename,
         status: doc.status,
         progress: getProgressForStatus(doc.status),
         current_step: getCurrentStep(doc.status),
@@ -55,11 +55,11 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
 
   const getProgressForStatus = (status: string): number => {
     switch (status) {
-      case 'uploaded':
+      case 'UPLOADED':
         return 25;
-      case 'processing':
+      case 'PROCESSING':
         return 60;
-      case 'ocr_processing':
+      case 'OCR_PROCESSING':
         return 85;
       default:
         return 0;
@@ -68,11 +68,11 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
 
   const getCurrentStep = (status: string): string => {
     switch (status) {
-      case 'uploaded':
+      case 'UPLOADED':
         return 'Starting processing...';
-      case 'processing':
+      case 'PROCESSING':
         return 'Extracting text and metadata...';
-      case 'ocr_processing':
+      case 'OCR_PROCESSING':
         return 'Running OCR analysis...';
       default:
         return 'Unknown status';
@@ -81,11 +81,11 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
 
   const getEstimatedTime = (status: string): string => {
     switch (status) {
-      case 'uploaded':
+      case 'UPLOADED':
         return '~2-3 minutes';
-      case 'processing':
+      case 'PROCESSING':
         return '~1-2 minutes';
-      case 'ocr_processing':
+      case 'OCR_PROCESSING':
         return '~30 seconds';
       default:
         return 'Unknown';
@@ -94,10 +94,10 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'processing':
-      case 'ocr_processing':
+      case 'PROCESSING':
+      case 'OCR_PROCESSING':
         return 'text-blue-400';
-      case 'uploaded':
+      case 'UPLOADED':
         return 'text-yellow-400';
       default:
         return 'text-slate-400';
@@ -170,7 +170,7 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
           <h4 className="font-medium text-white">Processing Details</h4>
           
           {processingDocuments.map((doc) => (
-            <div key={doc.id} className="bg-slate-800/50 rounded-lg p-4">
+            <div key={doc.document_id} className="bg-slate-800/50 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center space-x-3">
                   <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">

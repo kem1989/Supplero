@@ -158,7 +158,7 @@ async def get_document_status(
 async def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    status: Optional[DocumentStatus] = Query(None),
+    status: Optional[str] = Query(None),  # Changed from DocumentStatus to str to handle comma-separated values
     document_type: Optional[DocumentType] = Query(None),
     tags: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -171,12 +171,28 @@ async def list_documents(
         query = db.query(Document).filter(
             Document.organization_id == current_user.organization_id
         ).filter(
-            Document.status != DocumentStatus.ARCHIVED  # Exclude archived documents
+            Document.status != DocumentStatus.ARCHIVED.value  # Exclude archived documents
         )
         
         # Apply filters
         if status:
-            query = query.filter(Document.status == status)
+            # Handle comma-separated status values
+            status_list = [s.strip() for s in status.split(",") if s.strip()]
+            if status_list:
+                # Validate status values against the enum
+                valid_statuses = []
+                for status_val in status_list:
+                    # Check if the status value exists in the enum values
+                    if status_val in [status.value for status in DocumentStatus]:
+                        valid_statuses.append(status_val)
+                    else:
+                        # Skip invalid status values
+                        logger.warning(f"Invalid status value: {status_val}")
+                        continue
+                
+                if valid_statuses:
+                    # Filter by any of the valid statuses
+                    query = query.filter(Document.status.in_(valid_statuses))
         if document_type:
             query = query.filter(Document.document_type == document_type)
         if tags:
@@ -369,7 +385,7 @@ async def get_ingestion_stats(
         total_documents = db.query(Document).filter(
             and_(
                 Document.organization_id == current_user.organization_id,
-                Document.status != DocumentStatus.ARCHIVED
+                Document.status != DocumentStatus.ARCHIVED.value
             )
         ).count()
         

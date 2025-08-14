@@ -9,18 +9,19 @@ import DocumentList from '../components/DocumentList';
 import ProcessingStatus from '../components/ProcessingStatus';
 
 interface Document {
-  id: number;
-  filename: string;
-  original_filename: string;
+  document_id: number;  // Backend returns document_id, not id
+  filename: string;     // Backend returns filename, not original_filename
+  original_filename?: string; // Keep for backward compatibility
   status: string;
   document_type: string;
   document_format: string;
-  file_size: number;
+  file_size?: number;   // Backend doesn't return this in DocumentStatusResponse
   confidence_score?: number;
   ocr_quality_score?: number;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;  // Backend returns upload_timestamp
+  updated_at?: string;
   processing_error?: string;
+  upload_timestamp: string; // Backend returns this
 }
 
 export default function DocumentsPage() {
@@ -42,11 +43,11 @@ export default function DocumentsPage() {
       
       const processingIds = response.data.documents
         .filter((doc: Document) => 
-          doc.status === 'uploaded' || 
-          doc.status === 'processing' || 
-          doc.status === 'ocr_processing'
+          doc.status === 'UPLOADED' || 
+          doc.status === 'PROCESSING' || 
+          doc.status === 'OCR_PROCESSING'
         )
-        .map((doc: Document) => doc.id as number);
+        .map((doc: Document) => doc.document_id as number);
       setProcessingDocuments(new Set(processingIds));
     } catch (err: any) {
       console.error('Failed to fetch documents:', err);
@@ -58,13 +59,13 @@ export default function DocumentsPage() {
 
   const handleDocumentUploaded = (newDocument: Document) => {
     setDocuments(prev => [newDocument, ...prev]);
-    setProcessingDocuments(prev => new Set([...Array.from(prev), newDocument.id]));
+    setProcessingDocuments(prev => new Set([...Array.from(prev), newDocument.document_id]));
   };
 
   const handleDocumentStatusUpdate = (documentId: number, status: string) => {
     setDocuments(prev => 
       prev.map(doc => 
-        doc.id === documentId 
+        doc.document_id === documentId 
           ? { ...doc, status, updated_at: new Date().toISOString() }
           : doc
       )
@@ -80,7 +81,7 @@ export default function DocumentsPage() {
   };
 
   const handleDocumentDeleted = (documentId: number) => {
-    setDocuments(prev => prev.filter(doc => doc.id !== documentId));
+    setDocuments(prev => prev.filter(doc => doc.document_id !== documentId));
     setProcessingDocuments(prev => {
       const newSet = new Set(prev);
       newSet.delete(documentId);

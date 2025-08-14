@@ -4,18 +4,19 @@ import React, { useState } from 'react';
 import { api } from '../lib/auth';
 
 interface Document {
-  id: number;
-  filename: string;
-  original_filename: string;
+  document_id: number;  // Backend returns document_id, not id
+  filename: string;     // Backend returns filename, not original_filename
+  original_filename?: string; // Keep for backward compatibility
   status: string;
   document_type: string;
   document_format: string;
-  file_size: number;
+  file_size?: number;   // Backend doesn't return this in DocumentStatusResponse
   confidence_score?: number;
   ocr_quality_score?: number;
-  created_at: string;
-  updated_at: string;
+  created_at?: string;  // Backend returns upload_timestamp
+  updated_at?: string;
   processing_error?: string;
+  upload_timestamp: string; // Backend returns this
 }
 
 interface DocumentListProps {
@@ -111,13 +112,23 @@ export default function DocumentList({
 
   const handleDelete = async (documentId: number) => {
     try {
+      console.log('Attempting to delete document:', documentId);
+      if (!documentId || isNaN(documentId)) {
+        console.error('Invalid document ID:', documentId);
+        return;
+      }
+      
       setDeletingDocument(documentId);
-      await api.delete(`/documents/${documentId}`);
+      const response = await api.delete(`/documents/${documentId}`);
+      console.log('Delete response:', response);
+      
       onDocumentDeleted(documentId);
       setShowDeleteModal(false);
       setSelectedDocument(null);
     } catch (error) {
       console.error('Failed to delete document:', error);
+      // Show user-friendly error message
+      alert('Failed to delete document. Please try again.');
     } finally {
       setDeletingDocument(null);
     }
@@ -200,7 +211,7 @@ export default function DocumentList({
         <div className="space-y-4">
           {documents.map((document) => (
             <div
-              key={document.id}
+              key={document.document_id}
               className="bg-slate-800/50 rounded-lg p-4 hover:bg-slate-800/70 transition-colors cursor-pointer"
               onClick={() => setSelectedDocument(document)}
             >
@@ -213,7 +224,7 @@ export default function DocumentList({
                   </div>
                   
                   <div>
-                    <h4 className="font-medium text-white">{document.original_filename}</h4>
+                    <h4 className="font-medium text-white">{document.filename}</h4>
                     <div className="flex items-center space-x-4 text-sm text-slate-400 mt-1">
                       <span>{formatFileSize(document.file_size)}</span>
                       <span>•</span>
@@ -251,7 +262,7 @@ export default function DocumentList({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleRetryProcessing(document.id);
+                          handleRetryProcessing(document.document_id);
                         }}
                         className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors"
                         title="Retry processing"
@@ -265,6 +276,8 @@ export default function DocumentList({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
+                        console.log('Delete button clicked for document:', document);
+                        console.log('Document ID:', document.id);
                         setSelectedDocument(document);
                         setShowDeleteModal(true);
                       }}
@@ -281,8 +294,8 @@ export default function DocumentList({
 
               <div className="mt-3 pt-3 border-t border-slate-700/50">
                 <div className="flex items-center justify-between text-sm text-slate-400">
-                  <span>Uploaded: {formatDate(document.created_at)}</span>
-                  {document.updated_at !== document.created_at && (
+                  <span>Uploaded: {formatDate(document.upload_timestamp)}</span>
+                  {document.updated_at && document.updated_at !== document.upload_timestamp && (
                     <span>Updated: {formatDate(document.updated_at)}</span>
                   )}
                 </div>
@@ -298,7 +311,7 @@ export default function DocumentList({
           <div className="glass rounded-2xl p-6 max-w-md w-full mx-4">
             <h3 className="text-lg font-semibold text-white mb-4">Delete Document</h3>
             <p className="text-slate-300 mb-6">
-              Are you sure you want to delete "{selectedDocument.original_filename}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedDocument.filename}"? This action cannot be undone.
             </p>
             <div className="flex space-x-3">
               <button
@@ -308,8 +321,13 @@ export default function DocumentList({
                 Cancel
               </button>
               <button
-                onClick={() => handleDelete(selectedDocument.id)}
-                disabled={deletingDocument === selectedDocument.id}
+                onClick={() => {
+                  console.log('Modal delete button clicked');
+                  console.log('Selected document:', selectedDocument);
+                  console.log('Document ID to delete:', selectedDocument.document_id);
+                  handleDelete(selectedDocument.document_id);
+                }}
+                disabled={deletingDocument === selectedDocument.document_id}
                 className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors disabled:opacity-50"
               >
                 {deletingDocument === selectedDocument.id ? 'Deleting...' : 'Delete'}

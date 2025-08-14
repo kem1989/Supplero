@@ -10,11 +10,12 @@ from app.core.database import Base
 
 class DocumentStatus(str, Enum):
     """Document processing status"""
-    UPLOADED = "uploaded"
-    PROCESSING = "processing"
-    PROCESSED = "processed"
-    FAILED = "failed"
-    ARCHIVED = "archived"
+    UPLOADED = "UPLOADED"
+    PROCESSING = "PROCESSING"
+    OCR_PROCESSING = "OCR_PROCESSING"  # Added OCR processing status
+    PROCESSED = "PROCESSED"
+    FAILED = "FAILED"
+    ARCHIVED = "ARCHIVED"
 
 
 class DocumentType(str, Enum):
