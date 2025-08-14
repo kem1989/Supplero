@@ -57,6 +57,9 @@ class Document(Base):
     # Processing status
     status = Column(SQLEnum(DocumentStatus), default=DocumentStatus.UPLOADED)
     processing_error = Column(Text, nullable=True)
+    processing_started_at = Column(DateTime(timezone=True), nullable=True)
+    processing_completed_at = Column(DateTime(timezone=True), nullable=True)
+    error_message = Column(Text, nullable=True)
     
     # Content extraction results
     extracted_text = Column(Text, nullable=True)

@@ -62,15 +62,8 @@ const nextConfig = {
     return config
   },
   
-  // Rewrites for API proxy if needed
-  async rewrites() {
-    return [
-      {
-        source: '/api/:path*',
-        destination: `${process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8000'}/api/v1/:path*`,
-      },
-    ]
-  },
+  // Environment variables are now handled in docker-compose.yml
+  // and the api-config.ts utility file
 }
 
 module.exports = nextConfig 

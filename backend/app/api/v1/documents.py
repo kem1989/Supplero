@@ -4,7 +4,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, and_
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
@@ -43,8 +43,12 @@ async def upload_document(
     """Upload a document for ingestion and processing"""
     
     try:
-        # For now, allow any organization_id (will be enhanced with proper org validation later)
-        # TODO: Implement proper organization access validation
+        # Validate that user belongs to the specified organization
+        if current_user.organization_id != organization_id:
+            raise HTTPException(
+                status_code=403, 
+                detail="You can only upload documents to your own organization"
+            )
         
         # Validate file
         if not file.filename:
@@ -99,11 +103,11 @@ async def upload_document(
         logger.error(
             "Document upload failed",
             filename=file.filename if file else "unknown",
-            error=str(e),
             organization_id=organization_id,
-            user_id=current_user.id
+            user_id=current_user.id,
+            error=str(e)
         )
-        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to upload document")
 
 
 @router.get("/{document_id}", response_model=DocumentStatusResponse)
@@ -112,25 +116,31 @@ async def get_document_status(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Get document processing status"""
+    """Get document status and processing information"""
     
     try:
-        document = db.query(Document).filter(Document.id == document_id).first()
+        document = db.query(Document).filter(
+            and_(
+                Document.id == document_id,
+                Document.organization_id == current_user.organization_id
+            )
+        ).first()
         
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
         return DocumentStatusResponse(
             document_id=document.id,
-            filename=document.filename,
+            filename=document.original_filename,
             status=document.status,
             document_type=document.document_type,
             document_format=document.document_format,
-            progress_percentage=None,  # TODO: Implement progress tracking
-            estimated_completion=None,  # TODO: Implement ETA calculation
-            processing_error=document.processing_error,
-            created_at=document.created_at,
-            updated_at=document.updated_at
+            upload_timestamp=document.created_at,
+            processing_started_at=document.processing_started_at,
+            processing_completed_at=document.processing_completed_at,
+            error_message=document.error_message,
+            extracted_text_length=len(document.extracted_text) if document.extracted_text else 0,
+            metadata_count=len(document.extracted_metadata) if document.extracted_metadata else 0
         )
         
     except HTTPException:
@@ -148,52 +158,56 @@ async def get_document_status(
 async def list_documents(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    document_type: Optional[DocumentType] = None,
-    status: Optional[DocumentStatus] = None,
+    status: Optional[DocumentStatus] = Query(None),
+    document_type: Optional[DocumentType] = Query(None),
+    tags: Optional[str] = Query(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """List documents with pagination and filtering"""
     
     try:
-        # Build query
-        query = db.query(Document)  # TODO: Add organization filtering when org validation is implemented
+        # Build query with organization filtering
+        query = db.query(Document).filter(
+            Document.organization_id == current_user.organization_id
+        )
         
-        if document_type:
-            query = query.filter(Document.document_type == document_type)
-        
+        # Apply filters
         if status:
             query = query.filter(Document.status == status)
+        if document_type:
+            query = query.filter(Document.document_type == document_type)
+        if tags:
+            tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
+            # TODO: Implement tag-based filtering
         
         # Get total count
         total_count = query.count()
         
-        # Apply pagination
+        # Apply pagination and ordering
         documents = query.order_by(desc(Document.created_at)).offset(
             (page - 1) * page_size
         ).limit(page_size).all()
         
-        # Convert to response models
-        document_responses = []
-        for doc in documents:
-            doc_response = DocumentStatusResponse(
-                document_id=doc.id,
-                filename=doc.filename,
-                status=doc.status,
-                document_type=doc.document_type,
-                document_format=doc.document_format,
-                progress_percentage=None,
-                estimated_completion=None,
-                processing_error=doc.processing_error,
-                created_at=doc.created_at,
-                updated_at=doc.updated_at
-            )
-            document_responses.append(doc_response)
-        
+        # Calculate pagination info
         total_pages = (total_count + page_size - 1) // page_size
         
         return DocumentListResponse(
-            documents=document_responses,
+            documents=[
+                DocumentStatusResponse(
+                    document_id=doc.id,
+                    filename=doc.original_filename,
+                    status=doc.status,
+                    document_type=doc.document_type,
+                    document_format=doc.document_format,
+                    upload_timestamp=doc.created_at,
+                    processing_started_at=doc.processing_started_at,
+                    processing_completed_at=doc.processing_completed_at,
+                    error_message=doc.error_message,
+                    extracted_text_length=len(doc.extracted_text) if doc.extracted_text else 0,
+                    metadata_count=len(doc.extracted_metadata) if doc.extracted_metadata else 0
+                ) for doc in documents
+            ],
             total_count=total_count,
             page=page,
             page_size=page_size,
@@ -203,8 +217,7 @@ async def list_documents(
     except Exception as e:
         logger.error(
             "Failed to list documents",
-            error=str(e),
-            organization_id=current_org.id
+            error=str(e)
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve documents")
 
@@ -221,7 +234,7 @@ async def process_document(
         document = db.query(Document).filter(
             and_(
                 Document.id == document_id,
-                Document.organization_id == current_org.id
+                Document.organization_id == current_user.organization_id
             )
         ).first()
         
@@ -268,7 +281,7 @@ async def download_document(
         document = db.query(Document).filter(
             and_(
                 Document.id == document_id,
-                Document.organization_id == current_org.id
+                Document.organization_id == current_user.organization_id
             )
         ).first()
         
@@ -309,21 +322,26 @@ async def get_document_versions(
         document = db.query(Document).filter(
             and_(
                 Document.id == document_id,
-                Document.organization_id == current_org.id
+                Document.organization_id == current_user.organization_id
             )
         ).first()
         
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
-        # TODO: Implement version history retrieval
-        # For now, return basic document info
-        
+        # TODO: Implement version history
+        # For now, return basic info
         return DocumentVersionHistory(
-            document_id=document.id,
-            filename=document.filename,
-            current_version=document.version,
-            versions=[]  # TODO: Populate with actual versions
+            document_id=document_id,
+            versions=[
+                {
+                    "version": 1,
+                    "created_at": document.created_at,
+                    "status": document.status,
+                    "user_id": document.user_id
+                }
+            ],
+            total_versions=1
         )
         
     except HTTPException:
@@ -334,7 +352,7 @@ async def get_document_versions(
             document_id=document_id,
             error=str(e)
         )
-        raise HTTPException(status_code=500, detail="Failed to retrieve version history")
+        raise HTTPException(status_code=500, detail="Failed to retrieve document versions")
 
 
 @router.get("/stats/ingestion", response_model=DocumentIngestionStats)
@@ -345,25 +363,42 @@ async def get_ingestion_stats(
     """Get document ingestion statistics"""
     
     try:
-        # Get total documents
-        total_documents = db.query(Document).count()  # TODO: Add organization filtering
+        # Get total documents for user's organization
+        total_documents = db.query(Document).filter(
+            Document.organization_id == current_user.organization_id
+        ).count()
         
-        # Get documents by status
+        # Get documents by status for user's organization
         documents_by_status = {}
         for status in DocumentStatus:
-            count = db.query(Document).filter(Document.status == status).count()
+            count = db.query(Document).filter(
+                and_(
+                    Document.status == status,
+                    Document.organization_id == current_user.organization_id
+                )
+            ).count()
             documents_by_status[status] = count
         
-        # Get documents by type
+        # Get documents by type for user's organization
         documents_by_type = {}
         for doc_type in DocumentType:
-            count = db.query(Document).filter(Document.document_type == doc_type).count()
+            count = db.query(Document).filter(
+                and_(
+                    Document.document_type == doc_type,
+                    Document.organization_id == current_user.organization_id
+                )
+            ).count()
             documents_by_type[doc_type] = count
         
-        # Get documents by format
+        # Get documents by format for user's organization
         documents_by_format = {}
         for format_type in DocumentFormat:
-            count = db.query(Document).filter(Document.document_format == format_type).count()
+            count = db.query(Document).filter(
+                and_(
+                    Document.document_format == format_type,
+                    Document.organization_id == current_user.organization_id
+                )
+            ).count()
             documents_by_format[format_type] = count
         
         # Calculate success rate
@@ -406,7 +441,7 @@ async def delete_document(
         document = db.query(Document).filter(
             and_(
                 Document.id == document_id,
-                Document.organization_id == current_org.id
+                Document.organization_id == current_user.organization_id
             )
         ).first()
         

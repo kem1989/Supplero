@@ -31,11 +31,12 @@ class DocumentStatusResponse(BaseModel):
     status: DocumentStatus
     document_type: DocumentType
     document_format: DocumentFormat
-    progress_percentage: Optional[int] = Field(None, ge=0, le=100)
-    estimated_completion: Optional[datetime] = None
-    processing_error: Optional[str] = None
-    created_at: datetime
-    updated_at: datetime
+    upload_timestamp: datetime
+    processing_started_at: Optional[datetime] = None
+    processing_completed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    extracted_text_length: int = 0
+    metadata_count: int = 0
 
 
 class ExtractedMetadata(BaseModel):
@@ -108,9 +109,8 @@ class DocumentVersionInfo(BaseModel):
 class DocumentVersionHistory(BaseModel):
     """Response schema for document version history"""
     document_id: int
-    filename: str
-    current_version: int
-    versions: List[DocumentVersionInfo]
+    versions: List[Dict[str, Any]]
+    total_versions: int
 
 
 class ProcessingJobStatus(BaseModel):
