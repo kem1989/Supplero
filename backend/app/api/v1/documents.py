@@ -1,5 +1,7 @@
 import os
 import io
+import asyncio
+from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
@@ -10,6 +12,7 @@ from app.core.database import get_db
 from app.core.auth import get_current_user
 from app.core.document_ingestion import DocumentIngestionService
 from app.core.document_storage import DocumentStorage
+from app.core.document_processing import document_processing_service
 from app.core.logging import get_logger
 from app.models.document import Document, DocumentStatus, DocumentType, DocumentFormat
 from app.models.user import User
@@ -69,16 +72,35 @@ async def upload_document(
         if tags:
             tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
         
-        # Ingest document
-        document = await ingestion_service.ingest_document(
-            file_content=file_content,
+        # Create document object in memory (not saved to DB yet)
+        document = Document(
             original_filename=file.filename,
             organization_id=organization_id,
             user_id=current_user.id,
-            tags=tag_list
+            tags=tag_list,
+            priority=priority,
+            status=DocumentStatus.UPLOADED,
+            document_type=DocumentType.UNKNOWN,  # Will be detected during processing
+            document_format=DocumentFormat.UNKNOWN,  # Will be detected during processing
+            file_size=len(file_content),
+            upload_date=datetime.utcnow()
         )
         
-        # Save to database
+        # Process document completely before storing in database
+        logger.info(f"Processing document {file.filename} before database storage...")
+        
+        # Process the document through the complete pipeline
+        success = document_processing_service.process_document_in_memory(
+            document, file_content, db
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=500, 
+                detail="Document processing failed. Please try again."
+            )
+        
+        # Only now save the processed document to database
         db.add(document)
         db.commit()
         db.refresh(document)
@@ -283,6 +305,51 @@ async def process_document(
             "Failed to trigger document processing",
             document_id=document_id,
             error=str(e)
+        )
+        raise HTTPException(status_code=500, detail="Failed to start processing")
+
+
+@router.post("/process-pending")
+async def process_pending_documents(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Process all pending documents for the user's organization"""
+    
+    try:
+        # Get count of pending documents
+        pending_count = db.query(Document).filter(
+            and_(
+                Document.organization_id == current_user.organization_id,
+                Document.status == DocumentStatus.UPLOADED
+            )
+        ).count()
+        
+        if pending_count == 0:
+            return {"message": "No pending documents to process", "pending_count": 0}
+        
+        # Start processing in background
+        # Process synchronously to avoid async task issues
+        # In production, you'd use a proper task queue like Celery
+        processed_count = document_processing_service.process_pending_documents(db)
+        
+        logger.info(
+            "Started processing pending documents",
+            user_id=current_user.id,
+            pending_count=pending_count
+        )
+        
+        return {
+            "message": f"Successfully processed {processed_count} out of {pending_count} pending documents",
+            "pending_count": pending_count,
+            "processed_count": processed_count
+        }
+        
+    except Exception as e:
+        logger.error(
+            "Failed to start pending document processing",
+            error=str(e),
+            user_id=current_user.id
         )
         raise HTTPException(status_code=500, detail="Failed to start processing")
 

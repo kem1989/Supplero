@@ -30,17 +30,45 @@ export default function DocumentsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [processingDocuments, setProcessingDocuments] = useState<Set<number>>(new Set());
+  const [autoProcessingMessage, setAutoProcessingMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDocuments();
-  }, []);
+    
+    // Set up polling to refresh documents every 3 seconds when there are processing documents
+    // Only poll when there are actually documents being processed
+    const interval = setInterval(() => {
+      if (processingDocuments.size > 0) {
+        // Only fetch processing status, not the full documents list
+        // This prevents flickering of the Document Library
+        const fetchProcessingStatus = async () => {
+          try {
+            const response = await api.get('/documents?status=UPLOADED,PROCESSING,OCR_PROCESSING');
+            const processingIds = response.data.documents.map((doc: Document) => doc.document_id as number);
+            setProcessingDocuments(new Set(processingIds));
+          } catch (err) {
+            console.error('Failed to fetch processing status:', err);
+          }
+        };
+        fetchProcessingStatus();
+      }
+    }, 3000);
+    
+    return () => clearInterval(interval);
+  }, [processingDocuments.size]);
 
   const fetchDocuments = async () => {
     try {
       setLoading(true);
       const response = await api.get('/documents');
-      setDocuments(response.data.documents || []);
       
+      // Only show completed documents in the Document Library
+      const completedDocuments = response.data.documents.filter((doc: Document) => 
+        doc.status === 'PROCESSED' || doc.status === 'FAILED'
+      );
+      setDocuments(completedDocuments);
+      
+      // Track processing documents separately for the ProcessingStatus component
       const processingIds = response.data.documents
         .filter((doc: Document) => 
           doc.status === 'UPLOADED' || 
@@ -57,26 +85,38 @@ export default function DocumentsPage() {
     }
   };
 
-  const handleDocumentUploaded = (newDocument: Document) => {
-    setDocuments(prev => [newDocument, ...prev]);
+
+
+  const handleDocumentUploaded = async (newDocument: Document) => {
+    // Show processing started message
+    setAutoProcessingMessage('Document uploaded! Processing in progress...');
+    
+    // Add to processing documents set to show progress
     setProcessingDocuments(prev => new Set([...Array.from(prev), newDocument.document_id]));
+    
+    // The document is now being processed in the backend
+    // Processing happens automatically during upload
+    // We'll see the progress through the ProcessingStatus component
+    
+    // Clear the message after 3 seconds
+    setTimeout(() => setAutoProcessingMessage(null), 3000);
   };
 
   const handleDocumentStatusUpdate = (documentId: number, status: string) => {
-    setDocuments(prev => 
-      prev.map(doc => 
-        doc.document_id === documentId 
-          ? { ...doc, status, updated_at: new Date().toISOString() }
-          : doc
-      )
-    );
-
-    if (status === 'processed' || status === 'failed') {
+    // When a document completes processing, refresh the documents list
+    if (status === 'PROCESSED' || status === 'FAILED') {
+      // Remove from processing documents
       setProcessingDocuments(prev => {
         const newSet = new Set(Array.from(prev));
         newSet.delete(documentId);
         return newSet;
       });
+      
+      // Clear auto-processing message
+      setAutoProcessingMessage(null);
+      
+      // Refresh the documents list to show the newly completed document
+      fetchDocuments();
     }
   };
 
@@ -125,9 +165,29 @@ export default function DocumentsPage() {
               📄 Document Processing Pipeline
             </h1>
             <p className="text-slate-300">
-              Upload contracts, invoices, and other documents for AI-powered processing, OCR, and intelligent analysis.
+              Upload contracts, invoices, and other documents for AI-powered processing, OCR, and intelligent analysis. 
+              Processing starts automatically and documents appear in the library when complete.
             </p>
+            
+            {/* Processing Status Info */}
+            {processingDocuments.size > 0 && (
+              <div className="mt-4 p-3 bg-slate-800/50 border border-slate-700 rounded-lg">
+                <p className="text-slate-300 text-sm">
+                  📊 <span className="font-medium">{processingDocuments.size}</span> document{processingDocuments.size !== 1 ? 's' : ''} currently processing...
+                </p>
+              </div>
+            )}
           </div>
+
+          {/* Auto-processing Message */}
+          {autoProcessingMessage && (
+            <div className="mb-4 p-4 bg-gradient-to-r from-blue-500/20 to-purple-600/20 border border-blue-500/30 rounded-lg">
+              <div className="flex items-center space-x-3">
+                <div className="w-5 h-5 bg-blue-500 rounded-full animate-pulse"></div>
+                <p className="text-blue-300 font-medium">{autoProcessingMessage}</p>
+              </div>
+            </div>
+          )}
 
           {/* Processing Status Overview */}
           {processingDocuments.size > 0 && (
@@ -149,14 +209,28 @@ export default function DocumentsPage() {
 
           {/* Document List Section */}
           <div className="mb-8">
-            <DocumentList 
-              documents={documents}
-              loading={loading}
-              error={error}
-              onRefresh={fetchDocuments}
-              onDocumentDeleted={handleDocumentDeleted}
-              onStatusUpdate={handleDocumentStatusUpdate}
-            />
+            {documents.length === 0 && !loading && !error ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
+                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                </div>
+                <h3 className="text-lg font-medium text-slate-300 mb-2">No documents yet</h3>
+                <p className="text-slate-400">
+                  Upload your first document to get started. It will appear here once processing is complete.
+                </p>
+              </div>
+            ) : (
+              <DocumentList 
+                documents={documents}
+                loading={loading}
+                error={error}
+                onRefresh={fetchDocuments}
+                onDocumentDeleted={handleDocumentDeleted}
+                onStatusUpdate={handleDocumentStatusUpdate}
+              />
+            )}
           </div>
         </div>
       </div>

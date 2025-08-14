@@ -122,7 +122,7 @@ export default function ProcessingStatus({ processingCount, onStatusUpdate }: Pr
               Processing {processingCount} Document{processingCount !== 1 ? 's' : ''}
             </h3>
             <p className="text-slate-300 text-sm">
-              AI-powered document analysis in progress
+              AI-powered document analysis in progress. Documents will appear in the library once complete.
             </p>
           </div>
         </div>
