@@ -170,6 +170,8 @@ async def list_documents(
         # Build query with organization filtering
         query = db.query(Document).filter(
             Document.organization_id == current_user.organization_id
+        ).filter(
+            Document.status != DocumentStatus.ARCHIVED  # Exclude archived documents
         )
         
         # Apply filters
@@ -181,7 +183,7 @@ async def list_documents(
             tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
             # TODO: Implement tag-based filtering
         
-        # Get total count
+        # Get total count (excluding archived documents)
         total_count = query.count()
         
         # Apply pagination and ordering
@@ -363,23 +365,27 @@ async def get_ingestion_stats(
     """Get document ingestion statistics"""
     
     try:
-        # Get total documents for user's organization
+        # Get total documents for user's organization (excluding archived)
         total_documents = db.query(Document).filter(
-            Document.organization_id == current_user.organization_id
+            and_(
+                Document.organization_id == current_user.organization_id,
+                Document.status != DocumentStatus.ARCHIVED
+            )
         ).count()
         
-        # Get documents by status for user's organization
+        # Get documents by status for user's organization (excluding archived)
         documents_by_status = {}
         for status in DocumentStatus:
-            count = db.query(Document).filter(
-                and_(
-                    Document.status == status,
-                    Document.organization_id == current_user.organization_id
-                )
-            ).count()
-            documents_by_status[status] = count
+            if status != DocumentStatus.ARCHIVED:  # Skip archived status
+                count = db.query(Document).filter(
+                    and_(
+                        Document.status == status,
+                        Document.organization_id == current_user.organization_id
+                    )
+                ).count()
+                documents_by_status[status] = count
         
-        # Get documents by type for user's organization
+        # Get documents by type for user's organization (excluding archived)
         documents_by_type = {}
         for doc_type in DocumentType:
             count = db.query(Document).filter(
@@ -390,7 +396,7 @@ async def get_ingestion_stats(
             ).count()
             documents_by_type[doc_type] = count
         
-        # Get documents by format for user's organization
+        # Get documents by format for user's organization (excluding archived)
         documents_by_format = {}
         for format_type in DocumentFormat:
             count = db.query(Document).filter(
@@ -435,7 +441,11 @@ async def delete_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete document (soft delete - mark as archived)"""
+    """Delete document (soft delete - mark as archived)
+    
+    Note: This performs a soft delete by marking the document as archived.
+    Archived documents are excluded from all list queries and statistics.
+    """
     
     try:
         document = db.query(Document).filter(
@@ -459,7 +469,7 @@ async def delete_document(
         )
         
         return {"message": "Document archived successfully", "document_id": document_id}
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -469,3 +479,46 @@ async def delete_document(
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Failed to archive document")
+
+
+@router.post("/{document_id}/restore")
+async def restore_document(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Restore an archived document"""
+    
+    try:
+        document = db.query(Document).filter(
+            and_(
+                Document.id == document_id,
+                Document.organization_id == current_user.organization_id,
+                Document.status == DocumentStatus.ARCHIVED
+            )
+        ).first()
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Archived document not found")
+        
+        # Restore to uploaded status
+        document.status = DocumentStatus.UPLOADED
+        db.commit()
+        
+        logger.info(
+            "Document restored from archive",
+            document_id=document_id,
+            user_id=current_user.id
+        )
+        
+        return {"message": "Document restored successfully", "document_id": document_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to restore document",
+            document_id=document_id,
+            error=str(e)
+        )
+        raise HTTPException(status_code=500, detail="Failed to restore document")
