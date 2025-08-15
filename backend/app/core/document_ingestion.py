@@ -87,8 +87,8 @@ class DocumentIngestionService:
                 "Document ingested successfully",
                 document_id=document.id,
                 filename=original_filename,
-                document_type=document_type.value,
-                document_format=document_format.value,
+                document_type=document_type,
+                document_format=document_format,
                 ocr_required=document.ocr_required,
                 organization_id=organization_id
             )
@@ -225,7 +225,7 @@ class DocumentIngestionService:
     def _generate_secure_filename(self, original_filename: str) -> str:
         """Generate a secure, unique filename"""
         
-        timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_hash = hashlib.sha256(original_filename.encode()).hexdigest()[:16]
         extension = Path(original_filename).suffix
         

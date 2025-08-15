@@ -1,6 +1,5 @@
 import os
 import io
-import asyncio
 from datetime import datetime
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
@@ -38,8 +37,6 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 async def upload_document(
     file: UploadFile = File(...),
     organization_id: int = Form(...),
-    tags: Optional[str] = Form(None),
-    priority: Optional[int] = Form(1),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -67,43 +64,52 @@ async def upload_document(
         document_storage = DocumentStorage()
         ingestion_service = DocumentIngestionService(document_storage)
         
-        # Parse tags
-        tag_list = []
-        if tags:
-            tag_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
-        
-        # Create document object in memory (not saved to DB yet)
-        document = Document(
-            original_filename=file.filename,
+        # Use the ingestion service to properly detect document type and format
+        document = await ingestion_service.ingest_document(
+            file_content=file_content,
+            original_filename=file.filename or "unknown",
             organization_id=organization_id,
-            user_id=current_user.id,
-            tags=tag_list,
-            priority=priority,
-            status=DocumentStatus.UPLOADED,
-            document_type=DocumentType.UNKNOWN,  # Will be detected during processing
-            document_format=DocumentFormat.UNKNOWN,  # Will be detected during processing
-            file_size=len(file_content),
-            upload_date=datetime.utcnow()
+            user_id=current_user.id
         )
         
-        # Process document completely before storing in database
-        logger.info(f"Processing document {file.filename} before database storage...")
-        
-        # Process the document through the complete pipeline
-        success = document_processing_service.process_document_in_memory(
-            document, file_content, db
-        )
-        
-        if not success:
-            raise HTTPException(
-                status_code=500, 
-                detail="Document processing failed. Please try again."
-            )
-        
-        # Only now save the processed document to database
+        # Save document to database
         db.add(document)
         db.commit()
         db.refresh(document)
+        
+        # Process the document immediately to extract text and metadata
+        try:
+            logger.info(f"Starting immediate processing for document {document.id}")
+            
+            # Update status to PROCESSING
+            document.status = DocumentStatus.PROCESSING
+            document.processing_started_at = datetime.now()
+            db.commit()
+            
+            # Extract text content
+            text_content = await ingestion_service.extract_text_content(document)
+            document.extracted_text = text_content
+            
+            # Extract metadata
+            metadata = await ingestion_service.extract_metadata(document, text_content)
+            document.extracted_metadata = metadata.dict()
+            
+            # Update status to PROCESSED
+            document.status = DocumentStatus.PROCESSED
+            document.processing_completed_at = datetime.now()
+            document.processed_at = datetime.now()
+            db.commit()
+            
+            logger.info(f"Document {document.id} processed successfully")
+            
+        except Exception as processing_error:
+            logger.error(f"Document processing failed for {document.id}: {processing_error}")
+            document.status = DocumentStatus.FAILED
+            document.processing_error = str(processing_error)
+            document.error_message = str(processing_error)
+            db.commit()
+        
+        logger.info(f"Document {file.filename} processed and saved to database with ID {document.id}")
         
         logger.info(
             "Document uploaded successfully",
@@ -127,9 +133,16 @@ async def upload_document(
             filename=file.filename if file else "unknown",
             organization_id=organization_id,
             user_id=current_user.id,
-            error=str(e)
+            error=str(e),
+            error_type=type(e).__name__
         )
-        raise HTTPException(status_code=500, detail="Failed to upload document")
+        # Return more specific error details for debugging
+        if "UNIQUE constraint failed" in str(e):
+            raise HTTPException(status_code=400, detail="Document with this name already exists")
+        elif "NOT NULL constraint failed" in str(e):
+            raise HTTPException(status_code=400, detail="Missing required document information")
+        else:
+            raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
 
 
 @router.get("/{document_id}", response_model=DocumentStatusResponse)
@@ -193,7 +206,7 @@ async def list_documents(
         query = db.query(Document).filter(
             Document.organization_id == current_user.organization_id
         ).filter(
-            Document.status != DocumentStatus.ARCHIVED.value  # Exclude archived documents
+            Document.status != DocumentStatus.ARCHIVED  # Exclude archived documents
         )
         
         # Apply filters
@@ -452,7 +465,7 @@ async def get_ingestion_stats(
         total_documents = db.query(Document).filter(
             and_(
                 Document.organization_id == current_user.organization_id,
-                Document.status != DocumentStatus.ARCHIVED.value
+                Document.status != DocumentStatus.ARCHIVED
             )
         ).count()
         
