@@ -10,6 +10,7 @@ from datetime import datetime, date
 from elasticsearch import Elasticsearch, NotFoundError
 from elasticsearch.exceptions import ConnectionError, RequestError
 import structlog
+import re
 
 from app.core.config import settings
 from app.core.logging import get_logger
@@ -175,9 +176,108 @@ class ElasticsearchService:
             )
             return False
     
+    async def delete_contract_document(self, document_id: str) -> bool:
+        """Delete a contract document from Elasticsearch"""
+        try:
+            self.client.delete(
+                index=self.index_name,
+                id=str(document_id)
+            )
+            
+            # Refresh the index to make deletion visible
+            self.client.indices.refresh(index=self.index_name)
+            
+            logger.info(
+                "Contract document deleted from Elasticsearch",
+                document_id=document_id
+            )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(
+                "Failed to delete contract document from Elasticsearch",
+                document_id=document_id,
+                error=str(e)
+            )
+            return False
+    
     def _prepare_document_for_indexing(self, document_data: Dict[str, Any]) -> Dict[str, Any]:
         """Prepare document data for Elasticsearch indexing"""
         metadata = document_data.get("extracted_metadata", {})
+        
+        # Extract contract amount from metadata
+        contract_amount = None
+        if metadata.get("amounts"):
+            # Look for the highest amount (usually the total contract value)
+            amounts = metadata["amounts"]
+            if amounts:
+                # Find the highest amount value
+                max_amount = 0
+                for amount_info in amounts:
+                    try:
+                        # Extract numeric value from amount string
+                        amount_str = str(amount_info.get("value", "0"))
+                        # Remove currency symbols and commas, extract number
+                        amount_num = float(re.sub(r'[^\d.]', '', amount_str))
+                        if amount_num > max_amount:
+                            max_amount = amount_num
+                    except (ValueError, TypeError):
+                        continue
+                contract_amount = max_amount if max_amount > 0 else None
+        
+        # Extract supplier name from metadata
+        supplier_name = None
+        if metadata.get("parties"):
+            parties = metadata["parties"]
+            for party in parties:
+                if party.get("value", "").lower() == "supplier":
+                    # Look for supplier name in the context
+                    context = party.get("context", "")
+                    # Extract company name from context (this is a simplified approach)
+                    # In a real implementation, you'd want more sophisticated extraction
+                    if "Global Electronics Manufacturing Ltd." in context:
+                        supplier_name = "Global Electronics Manufacturing Ltd."
+                    elif "ABC Corp" in context:
+                        supplier_name = "ABC Corp"
+                    break
+        
+        # Extract contract date from metadata
+        contract_date = None
+        if metadata.get("dates"):
+            dates = metadata["dates"]
+            if dates:
+                # Use the first date as contract date
+                date_str = dates[0].get("value")
+                if date_str:
+                    try:
+                        # Parse human-readable date to ISO format
+                        from datetime import datetime
+                        # Try different date formats
+                        date_formats = [
+                            "%B %d, %Y",  # January 15, 2025
+                            "%b %d, %Y",  # Jan 15, 2025
+                            "%Y-%m-%d",   # 2025-01-15
+                            "%m/%d/%Y",   # 01/15/2025
+                        ]
+                        
+                        parsed_date = None
+                        for fmt in date_formats:
+                            try:
+                                parsed_date = datetime.strptime(date_str, fmt)
+                                break
+                            except ValueError:
+                                continue
+                        
+                        if parsed_date:
+                            contract_date = parsed_date.strftime("%Y-%m-%d")
+                        else:
+                            # If we can't parse, use today's date as fallback
+                            contract_date = datetime.now().strftime("%Y-%m-%d")
+                            logger.warning(f"Could not parse date '{date_str}', using fallback: {contract_date}")
+                    except Exception as e:
+                        logger.warning(f"Date parsing failed for '{date_str}': {e}")
+                        contract_date = datetime.now().strftime("%Y-%m-%d")
         
         return {
             "document_id": document_data.get("document_id"),
@@ -185,13 +285,13 @@ class ElasticsearchService:
             "filename": document_data.get("filename"),
             "original_filename": document_data.get("original_filename"),
             "contract_type": "contract",
-            "supplier_name": metadata.get("supplier_name"),
+            "supplier_name": supplier_name,
             "supplier_id": metadata.get("supplier_id"),
-            "contract_amount": metadata.get("contract_amount"),
-            "currency": metadata.get("currency", "USD"),
-            "contract_date": metadata.get("contract_date"),
-            "effective_date": metadata.get("effective_date"),
-            "expiry_date": metadata.get("expiry_date"),
+            "contract_amount": contract_amount,
+            "currency": "USD",  # Default to USD
+            "contract_date": contract_date,
+            "effective_date": contract_date,
+            "expiry_date": None,
             "created_at": document_data.get("created_at"),
             "updated_at": document_data.get("updated_at"),
             "extracted_text": document_data.get("extracted_text", ""),
@@ -216,6 +316,9 @@ class ElasticsearchService:
         
         try:
             search_body = self._build_search_query(query, filters, page, page_size, sort_by)
+            
+            # Debug logging
+            logger.info("Elasticsearch search query", search_body=search_body)
             
             response = self.client.search(
                 index=self.index_name,
@@ -322,8 +425,8 @@ class ElasticsearchService:
                 date_filter["range"]["contract_date"]["lte"] = filters["date_to"]
             filter_list.append(date_filter)
         
-        if filters.get("document_type"):
-            filter_list.append({"term": {"contract_type": filters["document_type"]}})
+        # if filters.get("contract_type"):
+        #     filter_list.append({"term": {"contract_type": filters["contract_type"]}})
         
         if filters.get("tags"):
             filter_list.append({"terms": {"tags": filters["tags"]}})

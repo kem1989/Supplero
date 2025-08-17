@@ -64,14 +64,14 @@ class AIAssistantService:
         return {
             ToolType.SEARCH_CONTRACTS: {
                 "name": "SEARCH_CONTRACTS",
-                "description": "Search for contracts based on various criteria like supplier, amount, date, document type",
+                "description": "Search for contracts based on various criteria like supplier, amount, date, contract type",
                 "parameters": {
                     "supplier": "string - Supplier name or company",
                     "amount_min": "number - Minimum contract amount",
                     "amount_max": "number - Maximum contract amount", 
                     "date_from": "string - Start date (YYYY-MM-DD)",
                     "date_to": "string - End date (YYYY-MM-DD)",
-                    "document_type": "string - Type of document (contract, invoice, etc.)",
+                    "contract_type": "string - Type of contract (contract, invoice, etc.)",
                     "tags": "array - List of tags to filter by"
                 },
                 "examples": [

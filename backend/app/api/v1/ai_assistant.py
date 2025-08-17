@@ -318,7 +318,7 @@ async def search_contracts(
             "amount_max": query_intent.parameters.get("amount_max"),
             "date_from": query_intent.parameters.get("date_from"),
             "date_to": query_intent.parameters.get("date_to"),
-            "document_type": query_intent.parameters.get("document_type"),
+            "contract_type": query_intent.parameters.get("contract_type"),
             "tags": query_intent.parameters.get("tags"),
             "organization_id": current_user.organization_id
         }
@@ -451,7 +451,7 @@ async def _execute_search_contracts(
             "amount_max": parameters.get("amount_max"),
             "date_from": parameters.get("date_from"),
             "date_to": parameters.get("date_to"),
-            "document_type": parameters.get("document_type"),
+            "contract_type": parameters.get("contract_type"),
             "tags": parameters.get("tags"),
             "organization_id": current_user.organization_id
         }

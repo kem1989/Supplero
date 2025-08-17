@@ -100,6 +100,35 @@ async def upload_document(
             document.processed_at = datetime.now()
             db.commit()
             
+            # Index document in Elasticsearch for search
+            try:
+                from app.core.elasticsearch_service import ElasticsearchService
+                es_service = ElasticsearchService()
+                
+                # Prepare document data for indexing
+                document_data = {
+                    "document_id": str(document.id),
+                    "organization_id": document.organization_id,
+                    "filename": document.filename,
+                    "original_filename": document.original_filename,
+                    "extracted_text": document.extracted_text,
+                    "extracted_metadata": document.extracted_metadata,
+                    "created_at": document.created_at.isoformat() if document.created_at else None,
+                    "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+                    "tags": []
+                }
+                
+                # Index the document
+                index_success = await es_service.index_contract_document(document_data)
+                if index_success:
+                    logger.info(f"Document {document.id} indexed in Elasticsearch successfully")
+                else:
+                    logger.warning(f"Failed to index document {document.id} in Elasticsearch")
+                    
+            except Exception as indexing_error:
+                logger.error(f"Elasticsearch indexing failed for document {document.id}: {indexing_error}")
+                # Don't fail the upload if indexing fails
+            
             logger.info(f"Document {document.id} processed successfully")
             
         except Exception as processing_error:
@@ -558,6 +587,22 @@ async def delete_document(
         document.status = DocumentStatus.ARCHIVED
         db.commit()
         
+        # Remove document from Elasticsearch search index
+        try:
+            from app.core.elasticsearch_service import ElasticsearchService
+            es_service = ElasticsearchService()
+            
+            # Delete from Elasticsearch
+            delete_success = await es_service.delete_contract_document(str(document_id))
+            if delete_success:
+                logger.info(f"Document {document_id} removed from Elasticsearch successfully")
+            else:
+                logger.warning(f"Failed to remove document {document_id} from Elasticsearch")
+                
+        except Exception as indexing_error:
+            logger.error(f"Elasticsearch cleanup failed for document {document_id}: {indexing_error}")
+            # Don't fail the archive operation if Elasticsearch cleanup fails
+        
         logger.info(
             "Document archived",
             document_id=document_id,
@@ -600,6 +645,35 @@ async def restore_document(
         # Restore to uploaded status
         document.status = DocumentStatus.UPLOADED
         db.commit()
+        
+        # Re-index document in Elasticsearch for search
+        try:
+            from app.core.elasticsearch_service import ElasticsearchService
+            es_service = ElasticsearchService()
+            
+            # Prepare document data for indexing
+            document_data = {
+                "document_id": str(document.id),
+                "organization_id": document.organization_id,
+                "filename": document.filename,
+                "original_filename": document.original_filename,
+                "extracted_text": document.extracted_text,
+                "extracted_metadata": document.extracted_metadata,
+                "created_at": document.created_at.isoformat() if document.created_at else None,
+                "updated_at": document.updated_at.isoformat() if document.updated_at else None,
+                "tags": []
+            }
+            
+            # Index the document
+            index_success = await es_service.index_contract_document(document_data)
+            if index_success:
+                logger.info(f"Document {document.id} re-indexed in Elasticsearch successfully")
+            else:
+                logger.warning(f"Failed to re-index document {document.id} in Elasticsearch")
+                
+        except Exception as indexing_error:
+            logger.error(f"Elasticsearch re-indexing failed for document {document.id}: {indexing_error}")
+            # Don't fail the restore operation if indexing fails
         
         logger.info(
             "Document restored from archive",
