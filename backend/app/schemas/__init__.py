@@ -15,6 +15,11 @@ from .document import (
     DocumentVersionHistory, ProcessingJobStatus, DocumentFeedbackRequest,
     DocumentFeedbackResponse, DocumentIngestionStats, ExtractedMetadata
 )
+from .supplier import (
+    SupplierCreate, SupplierUpdate, SupplierResponse, SupplierRiskResponse,
+    SupplierListResponse, RiskAssessmentCreate, RiskAssessmentResponse,
+    RiskLevel, CompanySize
+)
 
 __all__ = [
     "UserCreate", "UserLogin", "UserResponse", "TokenResponse", "TokenData",
@@ -25,5 +30,8 @@ __all__ = [
     "DocumentUploadRequest", "DocumentUploadResponse", "DocumentStatusResponse",
     "DocumentListResponse", "DocumentSearchRequest", "DocumentProcessingResult",
     "DocumentVersionHistory", "ProcessingJobStatus", "DocumentFeedbackRequest",
-    "DocumentFeedbackResponse", "DocumentIngestionStats", "ExtractedMetadata"
+    "DocumentFeedbackResponse", "DocumentIngestionStats", "ExtractedMetadata",
+    "SupplierCreate", "SupplierUpdate", "SupplierResponse", "SupplierRiskResponse",
+    "SupplierListResponse", "RiskAssessmentCreate", "RiskAssessmentResponse",
+    "RiskLevel", "CompanySize"
 ] 

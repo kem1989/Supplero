@@ -36,6 +36,7 @@ class Organization(Base):
     users = relationship("User", back_populates="organization")
     documents = relationship("Document", back_populates="organization")
     processing_jobs = relationship("DocumentProcessingJob", back_populates="organization")
+    suppliers = relationship("Supplier", back_populates="organization")
     
     def __repr__(self):
         return f"<Organization(id={self.id}, name='{self.name}', domain='{self.domain}')>" 

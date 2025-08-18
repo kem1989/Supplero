@@ -7,7 +7,7 @@ through different statuses and coordinating various processing steps.
 
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 from sqlalchemy.orm import Session
 
@@ -29,9 +29,9 @@ class DocumentProcessingService:
         """Detect document type based on filename and content"""
         # Simple detection based on file extension
         if filename.lower().endswith('.pdf'):
-            return DocumentType.CONTRACT
+            return DocumentType.PDF
         elif filename.lower().endswith('.txt'):
-            return DocumentType.TEXT
+            return DocumentType.TXT
         elif filename.lower().endswith(('.jpg', '.jpeg', '.png')):
             return DocumentType.IMAGE
         else:
@@ -40,11 +40,11 @@ class DocumentProcessingService:
     def _detect_document_format(self, filename: str) -> DocumentFormat:
         """Detect document format based on filename"""
         if filename.lower().endswith('.pdf'):
-            return DocumentFormat.PDF
+            return DocumentFormat.DIGITAL
         elif filename.lower().endswith('.txt'):
-            return DocumentFormat.TEXT
+            return DocumentFormat.DIGITAL
         elif filename.lower().endswith(('.jpg', '.jpeg', '.png')):
-            return DocumentFormat.IMAGE
+            return DocumentFormat.SCANNED
         else:
             return DocumentFormat.UNKNOWN
     
@@ -59,7 +59,7 @@ class DocumentProcessingService:
             
             # Step 2: Move to PROCESSING status
             document.status = DocumentStatus.PROCESSING
-            document.processing_started_at = datetime.utcnow()
+            document.processing_started_at = datetime.now(timezone.utc)
             logger.info(f"Document {document.original_filename} moved to PROCESSING status")
             
             # Simulate processing time
@@ -75,8 +75,8 @@ class DocumentProcessingService:
             
             # Step 4: Move to PROCESSED status
             document.status = DocumentStatus.PROCESSED
-            document.processing_completed_at = datetime.utcnow()
-            document.processed_at = datetime.utcnow()
+            document.processing_completed_at = datetime.now(timezone.utc)
+            document.processed_at = datetime.now(timezone.utc)
             
             logger.info(f"Document {document.original_filename} processing completed successfully in memory")
             return True
@@ -87,10 +87,10 @@ class DocumentProcessingService:
             # Mark as failed
             document.status = DocumentStatus.FAILED
             document.error_message = str(e)
-            document.processing_completed_at = datetime.utcnow()
+            document.processing_completed_at = datetime.now(timezone.utc)
             return False
     
-    def process_document(self, document_id: int, db: Session) -> bool:
+    async def process_document(self, document_id: int, db: Session) -> bool:
         """Process a document through the complete pipeline"""
         try:
             # Get the document
@@ -103,7 +103,7 @@ class DocumentProcessingService:
             
             # Step 1: Move to PROCESSING status
             document.status = DocumentStatus.PROCESSING
-            document.processing_started_at = datetime.utcnow()
+            document.processing_started_at = datetime.now(timezone.utc)
             db.commit()
             logger.info(f"Document {document_id} moved to PROCESSING status")
             
@@ -121,8 +121,8 @@ class DocumentProcessingService:
             
             # Step 3: Move to PROCESSED status
             document.status = DocumentStatus.PROCESSED
-            document.processing_completed_at = datetime.utcnow()
-            document.processed_at = datetime.utcnow()
+            document.processing_completed_at = datetime.now(timezone.utc)
+            document.processed_at = datetime.now(timezone.utc)
             db.commit()
             
             logger.info(f"Document {document_id} processing completed successfully")
@@ -159,12 +159,17 @@ class DocumentProcessingService:
             processed_count = 0
             for document in pending_documents:
                 logger.info(f"Processing document {document.id}: {document.original_filename}")
-                success = self.process_document(document.id, db)
-                if success:
-                    processed_count += 1
-                    logger.info(f"Document {document.id} processed successfully")
-                else:
-                    logger.error(f"Document {document.id} processing failed")
+                # Note: process_document is async, but we're calling it synchronously here
+                # In production, you'd use a proper task queue
+                try:
+                    success = asyncio.run(self.process_document(document.id, db))
+                    if success:
+                        processed_count += 1
+                        logger.info(f"Document {document.id} processed successfully")
+                    else:
+                        logger.error(f"Document {document.id} processing failed")
+                except Exception as e:
+                    logger.error(f"Failed to process document {document.id}: {e}")
                 
                 # Small delay between documents
                 time.sleep(1)

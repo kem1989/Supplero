@@ -11,8 +11,8 @@ from .audit import router as audit_router
 from .audit_sink import router as audit_sink_router
 from .documents import router as documents_router
 from .ai_assistant import router as ai_assistant_router
+from .suppliers import router as suppliers_router
 # from .contracts import router as contracts_router
-# from .suppliers import router as suppliers_router
 # from .ai_analysis import router as ai_analysis_router
 
 # Create the main API router
@@ -25,8 +25,8 @@ api_router.include_router(audit_router)
 api_router.include_router(audit_sink_router)
 api_router.include_router(documents_router)
 api_router.include_router(ai_assistant_router)
+api_router.include_router(suppliers_router)
 # api_router.include_router(contracts_router, prefix="/contracts", tags=["contracts"])
-# api_router.include_router(suppliers_router, prefix="/suppliers", tags=["suppliers"])
 # api_router.include_router(ai_analysis_router, prefix="/ai", tags=["ai-analysis"])
 
 # Root API endpoint

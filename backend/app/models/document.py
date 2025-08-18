@@ -20,20 +20,19 @@ class DocumentStatus(str, Enum):
 
 class DocumentType(str, Enum):
     """Supported document types"""
-    PDF = "pdf"
-    DOCX = "docx"
-    IMAGE = "image"  # For scanned images
-    TXT = "txt"
-    LEGACY = "legacy"  # Legacy formats that need conversion
-    UNKNOWN = "unknown"
+    PDF = "PDF"
+    DOCX = "DOCX"
+    IMAGE = "IMAGE"  # For scanned images
+    TXT = "TXT"
+    LEGACY = "LEGACY"  # Legacy formats that need conversion
+    UNKNOWN = "UNKNOWN"
 
 
 class DocumentFormat(str, Enum):
     """Document format categories"""
-    DIGITAL = "digital"  # Native digital format (PDF, DOCX)
-    SCANNED = "scanned"  # Scanned images
-    LEGACY = "legacy"    # Legacy formats that need conversion
-    UNKNOWN = "unknown"  # Unknown or unrecognized format
+    DIGITAL = "DIGITAL"  # Native digital format (PDF, DOCX)
+    SCANNED = "SCANNED"  # Scanned images
+    LEGACY = "LEGACY"    # Legacy formats that need conversion
 
 
 class Document(Base):

@@ -320,6 +320,97 @@
 - **Audit trails** will ensure compliance with risk management policies
 - **Performance monitoring** will optimize risk model execution
 
+#### **Month 3: Supplier Data Ingestion & Basic Profiling** ✅ **COMPLETED**
+
+**What's Implemented:**
+- **Supplier Profile Creation** - Complete supplier onboarding with basic information (name, industry, location, company size, revenue)
+- **Basic Risk Assessment** - Rule-based risk scoring using industry factors, company size, country, and financial indicators
+- **External Data Aggregation** - Real-time integration with News API for supplier risk signals and sentiment analysis
+- **Enhanced Risk Scoring** - Combines internal supplier data with external news signals for comprehensive risk assessment
+- **Risk Signal Generation** - Automatic detection of high-risk suppliers based on negative news and external factors
+
+**Technical Details:**
+- **Backend:** FastAPI with SQLAlchemy ORM, external API integration
+- **Risk Models:** Rule-based scoring with industry-specific risk factors
+- **External APIs:** News API integration for real-time supplier monitoring
+- **Data Models:** Comprehensive supplier and risk assessment schemas
+- **API Endpoints:** Complete CRUD operations for supplier management
+
+**API Endpoints:**
+- `POST /api/v1/suppliers/profile` - Create supplier profile with initial risk assessment
+- `GET /api/v1/suppliers/{id}/risk` - Retrieve basic risk score and recommendations
+- `POST /api/v1/suppliers/{id}/risk/enhanced` - Trigger enhanced risk assessment with external data
+- `GET /api/v1/suppliers/` - List suppliers with filtering and pagination
+- `PUT /api/v1/suppliers/{id}` - Update supplier information
+
+**Files:**
+- `backend/app/models/supplier.py` - Supplier and risk assessment data models
+- `backend/app/core/supplier_risk.py` - Risk assessment service with external data integration
+- `backend/app/core/external_data_aggregation.py` - External API integration service
+- `backend/app/api/v1/suppliers.py` - Complete supplier management API
+- `backend/EXTERNAL_APIS_SETUP.md` - External API configuration guide
+- `backend/test_external_data_aggregation.py` - Comprehensive testing suite
+
+**Real-World Capabilities:**
+
+**1. Create Supplier Profiles with Initial Risk Assessment**
+- Input: Company name, industry, size, location, financial data
+- Output: Initial risk score (0-100) with risk level (LOW, MEDIUM, HIGH, CRITICAL)
+- Automatic risk factor identification and scoring
+
+**2. Get Basic Risk Assessment**
+- Current risk status with recommendations
+- Risk factor breakdown and contribution analysis
+- Actionable insights for risk management
+
+**3. Enhanced Risk Assessment with External Data**
+- Real-time news monitoring for suppliers
+- Sentiment analysis and risk signal generation
+- Updated risk scores incorporating external factors
+- Comprehensive risk intelligence
+
+**Example Workflow:**
+1. **Create Profile** → `POST /suppliers/profile`
+   - Input: TechCorp Solutions, technology industry, medium size, US location
+   - Output: Initial risk score 35/100 (Medium Risk)
+
+2. **Monitor Basic Risk** → `GET /suppliers/{id}/risk`
+   - Check current risk status anytime
+   - Get recommendations and alerts
+
+3. **Enhanced Assessment** → `POST /suppliers/{id}/risk/enhanced`
+   - Trigger real-time external data analysis
+   - Get news sentiment and risk signals
+   - Updated risk score with external factors
+
+**Key Benefits:**
+✅ **Automated Risk Scoring** - No manual risk assessment needed
+✅ **Real-time Monitoring** - External data updates risk scores automatically
+✅ **Actionable Insights** - Clear recommendations for each risk level
+✅ **Comprehensive View** - Internal data + external signals = complete picture
+✅ **Audit Trail** - All risk assessments are logged and tracked
+✅ **Scalable** - Works for any number of suppliers
+
+**External Data Integration:**
+- **News API**: Real-time news monitoring with sentiment analysis
+- **Risk Signals**: Automatic detection of negative news and compliance issues
+- **Enhanced Scoring**: Combines basic risk with external risk signals
+- **Fallback Handling**: Gracefully handles API failures and missing data
+
+**Current Status:**
+✅ **Supplier Profile Management** - Complete CRUD operations
+✅ **Basic Risk Assessment** - Rule-based scoring with industry factors
+✅ **External Data Aggregation** - News API integration working
+✅ **Enhanced Risk Scoring** - Combines internal + external data
+✅ **Risk Signal Generation** - Automatic high-risk supplier detection
+✅ **API Endpoints** - All endpoints tested and working
+✅ **Testing Suite** - Comprehensive testing with real API data
+
+**Next Steps:**
+🔄 **Month 3: Read-Only Integration Connectors** - ERP/P2P system integrations
+🔄 **Month 3: Assistant Expansion** - Supplier risk Q&A via AI assistant
+🔄 **Month 3: High-Risk Industry Targeting** - Industry-specific risk models
+
 ### **Phase 4: UI & Insights**
 - **User authentication** will enable personalized dashboards
 - **Trace context** will provide user journey analytics

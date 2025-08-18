@@ -48,6 +48,7 @@ An enterprise-grade platform that leverages AI to transform procurement processe
 - **Cache**: Redis for session management and caching
 - **Search**: Elasticsearch for document search and embeddings
 - **AI**: OpenAI GPT-4 and Vision API for intelligent analysis
+- **External Data**: News APIs, financial data APIs for supplier risk assessment
 
 ### Technology Stack
 
@@ -75,9 +76,32 @@ An enterprise-grade platform that leverages AI to transform procurement processe
 - **Monitoring**: Prometheus & Grafana (planned)
 - **Security**: OAuth 2.0, RBAC, audit logging
 
-## 🛠️ Development
+## 🔍 Supplier Risk Management
 
-### Available Commands
+### Enhanced Risk Assessment
+
+Supplero now includes advanced supplier risk assessment capabilities that aggregate data from multiple external sources:
+
+- **News API Integration**: Real-time news sentiment analysis for risk detection
+- **Financial Data APIs**: Company financial health indicators and credit ratings
+- **Industry Risk Models**: Sector-specific risk factors and compliance frameworks
+- **Automated Risk Scoring**: Combines internal data with external signals
+
+### API Endpoints
+
+- `POST /api/v1/suppliers/profile` - Create supplier profile with initial risk assessment
+- `GET /api/v1/suppliers/{id}/risk` - Get basic risk assessment
+- `POST /api/v1/suppliers/{id}/risk/enhanced` - Trigger enhanced risk assessment with external data
+
+### External Data Sources
+
+- **News API**: Free tier available (1,000 requests/day)
+- **Dun & Bradstreet**: Enterprise financial data and credit ratings
+- **Refinitiv**: Real-time financial market data and risk metrics
+
+For detailed setup instructions, see [EXTERNAL_APIS_SETUP.md](backend/EXTERNAL_APIS_SETUP.md).
+
+## 🛠️ Development
 
 ```bash
 # Development environment

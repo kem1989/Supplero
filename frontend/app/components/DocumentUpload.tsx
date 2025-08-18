@@ -42,8 +42,6 @@ export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: D
         const formData = new FormData();
         formData.append('file', file);
         formData.append('organization_id', '1'); // TODO: Get from user context
-        formData.append('tags', 'contract,uploaded');
-        formData.append('priority', '3');
 
         // Upload file
         setUploadProgress(prev => ({
@@ -123,19 +121,19 @@ export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: D
         let message = 'Processing document...';
         
         switch (document.status) {
-          case 'uploaded':
+          case 'UPLOADED':
             progress = 90;
             message = 'Document uploaded, starting processing...';
             break;
-          case 'processing':
+          case 'PROCESSING':
             progress = 95;
             message = 'Extracting text and metadata...';
             break;
-          case 'ocr_processing':
+          case 'OCR_PROCESSING':
             progress = 97;
             message = 'Running OCR analysis...';
             break;
-          case 'processed':
+          case 'PROCESSED':
             progress = 100;
             message = 'Processing completed!';
             setUploadProgress(prev => ({
@@ -149,7 +147,7 @@ export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: D
             }));
             onStatusUpdate(documentId, document.status);
             return; // Stop polling
-          case 'failed':
+          case 'FAILED':
             setUploadProgress(prev => ({
               ...prev,
               [fileId]: {
