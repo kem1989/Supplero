@@ -2,7 +2,8 @@
 AI Assistant API endpoints for natural language query processing.
 """
 
-from typing import Dict, Any, Optional
+import time
+from typing import Dict, Any, Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
@@ -57,6 +58,62 @@ class AvailableToolsResponse(BaseModel):
     total_tools: int
     user_role: str
     organization_id: int
+
+
+# New models for clause-based queries
+class ClauseSearchRequest(BaseModel):
+    """Request model for clause-based searches"""
+    clause_types: List[str]
+    clause_content: Optional[str] = None
+    clause_conditions: Optional[Dict[str, Any]] = None
+    risk_factors: Optional[List[str]] = None
+    filters: Optional[Dict[str, Any]] = None
+    page: int = 1
+    page_size: int = 20
+
+
+class ClauseSearchResponse(BaseModel):
+    """Response model for clause-based searches"""
+    documents: List[Dict[str, Any]]
+    total_count: int
+    search_time_ms: float
+    clause_analysis: Dict[str, Any]
+    risk_assessment: Dict[str, Any]
+    search_strategy: str
+    performance_met: bool
+
+
+class RiskAnalysisRequest(BaseModel):
+    """Request model for risk analysis"""
+    risk_types: List[str]
+    clause_analysis: Optional[Dict[str, Any]] = None
+    supplier_risk: Optional[Dict[str, Any]] = None
+    regulatory_changes: Optional[List[str]] = None
+    time_period: Optional[str] = None
+
+
+class RiskAnalysisResponse(BaseModel):
+    """Response model for risk analysis"""
+    risk_assessment: Dict[str, Any]
+    clause_analysis: Dict[str, Any]
+    regulatory_impact: Dict[str, Any]
+    recommendations: List[str]
+
+
+class ClauseComparisonRequest(BaseModel):
+    """Request model for clause comparison"""
+    clause_type: str
+    comparison_criteria: List[str]
+    contract_ids: Optional[List[str]] = None
+    supplier_groups: Optional[List[str]] = None
+    benchmark_standards: Optional[List[str]] = None
+
+
+class ClauseComparisonResponse(BaseModel):
+    """Response model for clause comparison"""
+    comparison_results: Dict[str, Any]
+    benchmark_analysis: Dict[str, Any]
+    recommendations: List[str]
 
 
 @router.post("/query", response_model=NaturalLanguageQueryResponse)
@@ -396,6 +453,33 @@ async def _execute_tool_for_intent(
             )
             tool_name = "SEARCH_CONTRACTS"
             
+        elif query_intent.intent == IntentType.SEARCH_CLAUSES:
+            # Ensure the raw natural language query is included for downstream search
+            _params_with_raw = dict(query_intent.parameters or {})
+            _params_with_raw.setdefault("raw_query", query_intent.raw_query)
+            result = await _execute_search_clauses(
+                parameters=_params_with_raw,
+                db=db,
+                current_user=current_user
+            )
+            tool_name = "SEARCH_CLAUSES"
+            
+        elif query_intent.intent == IntentType.ANALYZE_RISK:
+            result = await _execute_analyze_risk(
+                parameters=query_intent.parameters,
+                db=db,
+                current_user=current_user
+            )
+            tool_name = "ANALYZE_RISK"
+            
+        elif query_intent.intent == IntentType.COMPARE_CLAUSES:
+            result = await _execute_compare_clauses(
+                parameters=query_intent.parameters,
+                db=db,
+                current_user=current_user
+            )
+            tool_name = "COMPARE_CLAUSES"
+            
         elif query_intent.intent == IntentType.GET_DETAILS:
             result = await _execute_get_details(
                 parameters=query_intent.parameters,
@@ -525,6 +609,158 @@ async def _execute_export(
     }
 
 
+async def _execute_search_clauses(
+    parameters: Dict[str, Any],
+    db: Session,
+    current_user: User
+) -> Dict[str, Any]:
+    """Execute clause-based search based on extracted parameters"""
+    try:
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Extract clause search parameters
+        clause_types = parameters.get("clause_types", [])
+        clause_content = parameters.get("clause_content")
+        clause_conditions = parameters.get("clause_conditions")
+        risk_factors = parameters.get("risk_factors", [])
+        filters = parameters.get("filters", {})
+        raw_query = parameters.get("raw_query")
+        
+        # Add organization filter
+        filters["organization_id"] = current_user.organization_id
+        
+        # Execute clause-based search
+        search_result = await ai_service.search_clauses(
+            clause_types=clause_types,
+            clause_content=clause_content,
+            clause_conditions=clause_conditions,
+            risk_factors=risk_factors,
+            raw_query=raw_query,
+            filters=filters,
+            page=1,
+            page_size=20
+        )
+        
+        return {
+            "message": "Clause-based search executed successfully",
+            "parameters_used": parameters,
+            "search_results": search_result,
+            "search_criteria": {
+                "clause_types": clause_types,
+                "risk_factors": risk_factors,
+                "filters": filters
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Clause-based search execution failed", error=str(e))
+        return {
+            "message": "Clause-based search failed",
+            "parameters_used": parameters,
+            "error": str(e),
+            "search_results": {
+                "documents": [],
+                "total_count": 0,
+                "search_time_ms": 0
+            }
+        }
+
+
+async def _execute_analyze_risk(
+    parameters: Dict[str, Any],
+    db: Session,
+    current_user: User
+) -> Dict[str, Any]:
+    """Execute risk analysis based on extracted parameters"""
+    try:
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Extract risk analysis parameters
+        risk_types = parameters.get("risk_types", [])
+        clause_analysis = parameters.get("clause_analysis")
+        supplier_risk = parameters.get("supplier_risk")
+        regulatory_changes = parameters.get("regulatory_changes", [])
+        time_period = parameters.get("time_period")
+        
+        # Execute risk analysis
+        risk_result = await ai_service.analyze_risk(
+            risk_types=risk_types,
+            clause_analysis=clause_analysis,
+            supplier_risk=supplier_risk,
+            regulatory_changes=regulatory_changes,
+            time_period=time_period
+        )
+        
+        return {
+            "message": "Risk analysis executed successfully",
+            "parameters_used": parameters,
+            "risk_results": risk_result,
+            "analysis_criteria": {
+                "risk_types": risk_types,
+                "regulatory_changes": regulatory_changes,
+                "time_period": time_period
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Risk analysis execution failed", error=str(e))
+        return {
+            "message": "Risk analysis failed",
+            "parameters_used": parameters,
+            "error": str(e),
+            "risk_results": {}
+        }
+
+
+async def _execute_compare_clauses(
+    parameters: Dict[str, Any],
+    db: Session,
+    current_user: User
+) -> Dict[str, Any]:
+    """Execute clause comparison based on extracted parameters"""
+    try:
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Extract clause comparison parameters
+        clause_type = parameters.get("clause_type")
+        comparison_criteria = parameters.get("comparison_criteria", [])
+        contract_ids = parameters.get("contract_ids")
+        supplier_groups = parameters.get("supplier_groups", [])
+        benchmark_standards = parameters.get("benchmark_standards", [])
+        
+        # Execute clause comparison
+        comparison_result = await ai_service.compare_clauses(
+            clause_type=clause_type,
+            comparison_criteria=comparison_criteria,
+            contract_ids=contract_ids,
+            supplier_groups=supplier_groups,
+            benchmark_standards=benchmark_standards
+        )
+        
+        return {
+            "message": "Clause comparison executed successfully",
+            "parameters_used": parameters,
+            "comparison_results": comparison_result,
+            "comparison_criteria": {
+                "clause_type": clause_type,
+                "criteria": comparison_criteria,
+                "supplier_groups": supplier_groups
+            }
+        }
+        
+    except Exception as e:
+        logger.error("Clause comparison execution failed", error=str(e))
+        return {
+            "message": "Clause comparison failed",
+            "parameters_used": parameters,
+            "error": str(e),
+            "comparison_results": {}
+        }
+
+
 def _get_suggested_actions(intent: IntentType) -> list:
     """Get suggested actions based on the identified intent"""
     if intent == IntentType.SEARCH_CONTRACTS:
@@ -532,6 +768,24 @@ def _get_suggested_actions(intent: IntentType) -> list:
             "Execute search with extracted parameters",
             "Modify search criteria if needed",
             "View search results"
+        ]
+    elif intent == IntentType.SEARCH_CLAUSES:
+        return [
+            "Execute clause-based search",
+            "Review risk assessment",
+            "Analyze compliance gaps"
+        ]
+    elif intent == IntentType.ANALYZE_RISK:
+        return [
+            "Review risk analysis results",
+            "Check mitigation recommendations",
+            "Monitor risk trends"
+        ]
+    elif intent == IntentType.COMPARE_CLAUSES:
+        return [
+            "Review clause comparison",
+            "Analyze best practices",
+            "Identify standardization opportunities"
         ]
     elif intent == IntentType.GET_DETAILS:
         return [
@@ -547,3 +801,147 @@ def _get_suggested_actions(intent: IntentType) -> list:
         ]
     else:
         return ["Please rephrase your query"]
+
+
+# New endpoints for enhanced clause-based functionality
+
+@router.post("/search-clauses", response_model=ClauseSearchResponse)
+async def search_clauses(
+    request: ClauseSearchRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Search for contracts based on specific clause content and characteristics.
+    
+    This endpoint implements a hybrid approach combining:
+    1. Fast Elasticsearch search for initial contract filtering
+    2. RAG-based analysis for complex clause content understanding
+    """
+    try:
+        logger.info(
+            "Executing clause-based search",
+            user_id=current_user.id,
+            organization_id=current_user.organization_id,
+            clause_types=request.clause_types
+        )
+        
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Execute clause-based search
+        search_result = await ai_service.search_clauses(
+            clause_types=request.clause_types,
+            clause_content=request.clause_content,
+            clause_conditions=request.clause_conditions,
+            risk_factors=request.risk_factors,
+            filters=request.filters,
+            page=request.page,
+            page_size=request.page_size
+        )
+        
+        return ClauseSearchResponse(**search_result)
+        
+    except Exception as e:
+        logger.error(
+            "Clause-based search failed",
+            user_id=current_user.id,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Clause-based search failed: {str(e)}"
+        )
+
+
+@router.post("/analyze-risk", response_model=RiskAnalysisResponse)
+async def analyze_risk(
+    request: RiskAnalysisRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Analyze contract risk based on clause analysis and external factors.
+    
+    This endpoint provides comprehensive risk assessment including:
+    - Financial, compliance, and operational risk analysis
+    - Regulatory change impact assessment
+    - Mitigation recommendations
+    """
+    try:
+        logger.info(
+            "Executing risk analysis",
+            user_id=current_user.id,
+            organization_id=current_user.organization_id,
+            risk_types=request.risk_types
+        )
+        
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Execute risk analysis
+        risk_result = await ai_service.analyze_risk(
+            risk_types=request.risk_types,
+            clause_analysis=request.clause_analysis,
+            supplier_risk=request.supplier_risk,
+            regulatory_changes=request.regulatory_changes,
+            time_period=request.time_period
+        )
+        
+        return RiskAnalysisResponse(**risk_result)
+        
+    except Exception as e:
+        logger.error(
+            "Risk analysis failed",
+            user_id=current_user.id,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Risk analysis failed: {str(e)}"
+        )
+
+
+@router.post("/compare-clauses", response_model=ClauseComparisonResponse)
+async def compare_clauses(
+    request: ClauseComparisonRequest,
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Compare clause structures and terms across multiple contracts.
+    
+    This endpoint provides detailed analysis including:
+    - Clause variation analysis across contracts
+    - Benchmark comparison with industry standards
+    - Best practice recommendations
+    """
+    try:
+        logger.info(
+            "Executing clause comparison",
+            user_id=current_user.id,
+            organization_id=current_user.organization_id,
+            clause_type=request.clause_type
+        )
+        
+        # Initialize AI assistant service
+        ai_service = AIAssistantService()
+        
+        # Execute clause comparison
+        comparison_result = await ai_service.compare_clauses(
+            clause_type=request.clause_type,
+            comparison_criteria=request.comparison_criteria,
+            contract_ids=request.contract_ids,
+            supplier_groups=request.supplier_groups,
+            benchmark_standards=request.benchmark_standards
+        )
+        
+        return ClauseComparisonResponse(**comparison_result)
+        
+    except Exception as e:
+        logger.error(
+            "Clause comparison failed",
+            user_id=current_user.id,
+            error=str(e)
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Clause comparison failed: {str(e)}"
+        )

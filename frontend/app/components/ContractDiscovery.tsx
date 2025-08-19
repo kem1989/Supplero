@@ -7,19 +7,40 @@ import { api } from '../lib/auth';
 
 interface SearchResult {
   documents: Array<{
-    document_id: string;
+    id?: string | number;
+    document_id?: string;
     filename: string;
-    supplier_name: string;
-    contract_amount: number;
-    currency: string;
-    contract_type: string;
-    risk_level: string;
-    status: string;
-    score: number;
+    original_filename?: string;
+    supplier_name?: string;
+    contract_amount?: number;
+    currency?: string;
+    contract_type?: string;
+    risk_level?: string;
+    status?: string;
+    score?: number;
+    relevance_score?: number;
+    extracted_text?: string;
+    match_reasons?: string[];
+    key_excerpts?: string[];
+    search_highlights?: string[];
+    contract_date?: string;
   }>;
   total_count: number;
   search_time_ms: number;
   performance_met: boolean;
+  search_strategy?: string;
+  search_method?: string;
+  fallback_reason?: string;
+  clause_analysis?: {
+    clause_findings: Array<{
+      clause_type: string;
+      risk_level: string;
+      details: string;
+      extracted_text: string;
+    }>;
+    risk_indicators: string[];
+    recommendations: string[];
+  };
   ai_insights?: {
     summary: string;
     total_contracts: number;
@@ -49,14 +70,47 @@ export default function ContractDiscovery() {
     setResults(null);
 
     try {
-      // Use the api instance which automatically handles authentication
-      const response = await api.post('/ai-assistant/search-contracts', {
+      // Use the unified endpoint which automatically routes queries to the right service
+      const response = await api.post('/ai-assistant/execute', {
         query: query.trim(),
         user_context: null
       });
 
       const data = response.data;
-      setResults(data);
+      console.log('Raw API response:', data); // Debug log
+      console.log('Documents from API:', data.execution_result?.search_results?.documents); // Debug documents
+      
+      // Transform unified endpoint response to match SearchResult interface
+      const searchResults = data.execution_result?.search_results || {};
+      const transformedResult: SearchResult = {
+        documents: searchResults.documents || [],
+        total_count: searchResults.total_count || 0,
+        search_time_ms: searchResults.search_time_ms || data.execution_time_ms || 0,
+        performance_met: searchResults.performance_met || (data.execution_time_ms || 0) < 500,
+        search_strategy: searchResults.search_strategy,
+        search_method: searchResults.search_method,
+        fallback_reason: searchResults.fallback_reason,
+        ai_insights: {
+          summary: `Query processed as: ${data.intent || 'unknown'}`,
+          total_contracts: searchResults.total_count || 0,
+          total_value: (searchResults.documents || []).reduce((sum: number, doc: any) => 
+            sum + (doc.contract_amount || 0), 0),
+          suppliers_count: new Set(
+            (searchResults.documents || []).map((d: any) => d.supplier_name || d.filename)
+          ).size
+        },
+        query_processing: {
+          intent: data.intent || 'unknown',
+          confidence: data.confidence || 0,
+          extracted_parameters: data.execution_result?.parameters_used || {},
+          confidence_threshold_met: (data.confidence || 0) >= 0.9
+        },
+        clause_analysis: searchResults.clause_analysis
+      };
+      
+      console.log('Transformed result:', transformedResult); // Debug log
+      console.log('Transformed documents:', transformedResult.documents); // Debug transformed documents
+      setResults(transformedResult);
     } catch (err: any) {
       console.error('Search error:', err);
       if (err.response?.data?.detail) {
@@ -72,11 +126,18 @@ export default function ContractDiscovery() {
   };
 
   const exampleQueries = [
-    "Find contracts with supplier ABC Corp",
-    "Show me contracts over $100,000 from last year",
-    "Get all contracts with tag 'high-risk'",
-    "Search for contracts expiring this month",
-    "Find supplier contracts in the technology sector"
+    "Find contracts with semiconductor suppliers that have ISO 9001 certification",
+    "Show me contracts with force majeure clauses and penalty terms",
+    "Which agreements have confidentiality terms longer than 3 years?",
+    "Find contracts with automotive suppliers over $100,000",
+    "Show contracts requiring quality certifications and warranty clauses",
+    "Find agreements with intellectual property restrictions",
+    "Which contracts have termination clauses with notice periods?",
+    "Show contracts with dispute resolution through arbitration",
+    "Find suppliers with compliance certifications and liability coverage",
+    "Which agreements have performance metrics and penalty clauses?",
+    "Show contracts with export control restrictions",
+    "Find agreements with non-compete clauses longer than 2 years"
   ];
 
   return (
@@ -131,8 +192,9 @@ export default function ContractDiscovery() {
         
                   <div className="mb-8">
             <p className="text-slate-300 mb-4">
-              Use natural language to search for contracts. The AI will understand your query and 
-              extract relevant parameters for fast, sub-500ms search results.
+              Use natural language to search for contracts and analyze clauses. The AI will understand your query, 
+              automatically route it to the right service, and provide intelligent results including risk analysis, 
+              compliance gaps, and clause comparisons.
             </p>
             
             <div className="flex gap-2 mb-4">
@@ -252,6 +314,104 @@ export default function ContractDiscovery() {
               </div>
             )}
 
+            {/* RAG Search Strategy Info */}
+            {(results.search_strategy || results.search_method) && (
+              <div className="bg-gradient-to-r from-green-500/10 to-blue-500/10 p-4 rounded-lg border border-green-500/20">
+                <h3 className="text-lg font-semibold text-white mb-3">🔍 Search Strategy</h3>
+                <div className="space-y-3">
+                  <div className="flex items-center gap-3">
+                    <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                      results.search_strategy === 'RAG_FALLBACK' 
+                        ? 'bg-blue-100 text-blue-800' 
+                        : 'bg-green-100 text-green-800'
+                    }`}>
+                      {results.search_strategy === 'RAG_FALLBACK' 
+                        ? '🤖 RAG Semantic Search' 
+                        : '⚡ Elasticsearch Search'}
+                    </div>
+                    <div className="text-sm text-slate-400">
+                      {results.search_strategy === 'RAG_FALLBACK' 
+                        ? 'AI-powered semantic document analysis'
+                        : 'Fast indexed keyword search'}
+                    </div>
+                  </div>
+                  
+                  {results.fallback_reason && (
+                    <div className="bg-slate-800/50 p-3 rounded-lg">
+                      <div className="text-sm text-slate-300">
+                        <span className="text-yellow-400">⚠️ Fallback Reason:</span> {results.fallback_reason}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {results.search_method && (
+                    <div className="text-sm text-slate-400">
+                      Search Method: <span className="text-slate-300">{results.search_method}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Clause Analysis Results */}
+            {results.clause_analysis && Object.keys(results.clause_analysis).length > 0 && (
+              <div className="bg-gradient-to-r from-purple-500/10 to-pink-500/10 p-6 rounded-lg border border-purple-500/20">
+                <h3 className="text-lg font-semibold text-white mb-3">📋 Clause Analysis Results</h3>
+                
+                {results.clause_analysis.clause_findings && results.clause_analysis.clause_findings.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-md font-medium text-white mb-2">Clause Findings:</h4>
+                    <div className="space-y-2">
+                      {results.clause_analysis.clause_findings.map((finding: any, index: number) => (
+                        <div key={index} className="bg-slate-800/50 p-3 rounded-lg">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-sm font-medium text-purple-300">
+                              {finding.clause_type || 'Unknown'}
+                            </span>
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              finding.risk_level === 'high' ? 'bg-red-100 text-red-800' :
+                              finding.risk_level === 'medium' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-green-100 text-green-800'
+                            }`}>
+                              {finding.risk_level || 'low'} risk
+                            </span>
+                          </div>
+                          <p className="text-sm text-slate-300">{finding.details || finding.extracted_text || 'No details available'}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {results.clause_analysis.risk_indicators && results.clause_analysis.risk_indicators.length > 0 && (
+                  <div className="mb-4">
+                    <h4 className="text-md font-medium text-white mb-2">Risk Indicators:</h4>
+                    <div className="flex flex-wrap gap-2">
+                      {results.clause_analysis.risk_indicators.map((risk: string, index: number) => (
+                        <span key={index} className="px-3 py-1 bg-red-100 text-red-800 text-sm rounded-full">
+                          ⚠️ {risk}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {results.clause_analysis.recommendations && results.clause_analysis.recommendations.length > 0 && (
+                  <div>
+                    <h4 className="text-md font-medium text-white mb-2">Recommendations:</h4>
+                    <div className="space-y-2">
+                      {results.clause_analysis.recommendations.map((rec: string, index: number) => (
+                        <div key={index} className="flex items-start gap-2">
+                          <span className="text-green-400 mt-1">💡</span>
+                          <span className="text-sm text-slate-300">{rec}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* AI Insights */}
             {results.ai_insights && (
               <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 p-6 rounded-lg border border-purple-500/20">
@@ -276,31 +436,63 @@ export default function ContractDiscovery() {
                   No contracts found matching your search criteria.
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {results.documents.map((doc) => (
-                    <div key={doc.document_id} className="border border-slate-600/50 rounded-lg p-4 hover:shadow-md transition-shadow bg-slate-800/30">
-                      <div className="flex justify-between items-start">
+                <div className="space-y-4">
+                  {results.documents.map((doc, index) => (
+                    <div key={doc.id || doc.document_id || index} className="border border-slate-600/50 rounded-lg p-4 hover:shadow-md transition-shadow bg-slate-800/30">
+                      <div className="flex justify-between items-start mb-3">
                         <div className="flex-1">
                           <h4 className="font-medium text-white">{doc.filename}</h4>
+                          {doc.original_filename && doc.original_filename !== doc.filename && (
+                            <p className="text-xs text-slate-500">Original: {doc.original_filename}</p>
+                          )}
                           <p className="text-sm text-slate-400">
                             Supplier: {doc.supplier_name || 'Unknown'}
                           </p>
                           <div className="flex gap-4 mt-2 text-sm text-slate-500">
-                            <span>Type: {doc.contract_type}</span>
-                            <span>Status: {doc.status}</span>
-                            <span>Risk: {doc.risk_level}</span>
-                            {doc.contract_amount && (
+                            {doc.contract_type && <span>Type: {doc.contract_type}</span>}
+                            {doc.status && <span>Status: {doc.status}</span>}
+                            {doc.risk_level && <span>Risk: {doc.risk_level}</span>}
+                            {doc.contract_amount && doc.contract_amount > 0 && (
                               <span>Amount: ${doc.contract_amount.toLocaleString()}</span>
                             )}
+                            {doc.contract_date && <span>Date: {doc.contract_date}</span>}
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm text-slate-500">Score</div>
+                          <div className="text-sm text-slate-500">Relevance</div>
                           <div className="font-medium text-white">
-                            {doc.score.toFixed(2)}
+                            {((doc.relevance_score || doc.score || 0) * 100).toFixed(0)}%
                           </div>
                         </div>
                       </div>
+                      
+                      {/* RAG-specific information */}
+                      {doc.match_reasons && doc.match_reasons.length > 0 && (
+                        <div className="mt-3 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+                          <h5 className="text-sm font-medium text-blue-300 mb-2">🎯 Why this matches:</h5>
+                          <ul className="text-sm text-slate-300 space-y-1">
+                            {doc.match_reasons.map((reason, idx) => (
+                              <li key={idx} className="flex items-start gap-2">
+                                <span className="text-blue-400 mt-1">•</span>
+                                <span>{reason}</span>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {doc.key_excerpts && doc.key_excerpts.length > 0 && (
+                        <div className="mt-3 p-3 bg-green-500/10 rounded-lg border border-green-500/20">
+                          <h5 className="text-sm font-medium text-green-300 mb-2">📄 Key excerpts:</h5>
+                          <div className="text-sm text-slate-300 space-y-2">
+                            {doc.key_excerpts.map((excerpt, idx) => (
+                              <div key={idx} className="bg-slate-800/50 p-2 rounded text-xs font-mono">
+                                "{excerpt.length > 200 ? excerpt.substring(0, 200) + '...' : excerpt}"
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>

@@ -1,7 +1,7 @@
 import os
 import io
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -100,12 +100,37 @@ async def upload_document(
             document.processed_at = datetime.now()
             db.commit()
             
-            # Index document in Elasticsearch for search
+            # Extract clauses from the document using AI-powered analysis
+            extracted_clauses = []
+            try:
+                from app.core.clause_extraction import ClauseExtractionService
+                clause_service = ClauseExtractionService()
+                
+                logger.info(f"Starting clause extraction for document {document.id}")
+                
+                # Extract clauses using AI-powered analysis
+                extracted_clauses = await clause_service.extract_clauses_from_document(
+                    document_text=document.extracted_text,
+                    document_id=str(document.id),
+                    organization_id=str(document.organization_id)
+                )
+                
+                logger.info(f"Clause extraction completed for document {document.id}: {len(extracted_clauses)} clauses found")
+                
+                # Store clauses in database (contract_clauses table)
+                await store_clauses_in_database(extracted_clauses, document.id, db)
+                
+            except Exception as clause_error:
+                logger.error(f"Clause extraction failed for document {document.id}: {clause_error}")
+                # Don't fail the upload if clause extraction fails
+                extracted_clauses = []
+            
+            # Index document in Elasticsearch for search (with clause data)
             try:
                 from app.core.elasticsearch_service import ElasticsearchService
                 es_service = ElasticsearchService()
                 
-                # Prepare document data for indexing
+                # Prepare document data for indexing with extracted clauses
                 document_data = {
                     "document_id": str(document.id),
                     "organization_id": document.organization_id,
@@ -113,15 +138,16 @@ async def upload_document(
                     "original_filename": document.original_filename,
                     "extracted_text": document.extracted_text,
                     "extracted_metadata": document.extracted_metadata,
+                    "extracted_clauses": [clause.to_dict() for clause in extracted_clauses],  # Add extracted clauses
                     "created_at": document.created_at.isoformat() if document.created_at else None,
                     "updated_at": document.updated_at.isoformat() if document.updated_at else None,
                     "tags": []
                 }
                 
-                # Index the document
+                # Index the document with clause data
                 index_success = await es_service.index_contract_document(document_data)
                 if index_success:
-                    logger.info(f"Document {document.id} indexed in Elasticsearch successfully")
+                    logger.info(f"Document {document.id} indexed in Elasticsearch with {len(extracted_clauses)} clauses successfully")
                 else:
                     logger.warning(f"Failed to index document {document.id} in Elasticsearch")
                     
@@ -172,6 +198,43 @@ async def upload_document(
             raise HTTPException(status_code=400, detail="Missing required document information")
         else:
             raise HTTPException(status_code=500, detail=f"Failed to upload document: {str(e)}")
+
+
+async def store_clauses_in_database(
+    extracted_clauses: List,
+    document_id: int,
+    db: Session
+) -> bool:
+    """Store extracted clauses in the contract_clauses table"""
+    try:
+        if not extracted_clauses:
+            return True
+        
+        # Import the ContractClause model
+        from app.models.document import ContractClause
+        
+        # Store each extracted clause
+        for clause in extracted_clauses:
+            clause_record = ContractClause(
+                contract_id=document_id,
+                clause_type=clause.clause_type.value,
+                clause_text=clause.clause_text,
+                extracted_text=clause.extracted_text,
+                risk_level=clause.risk_level,
+                confidence_score=clause.confidence_score,
+                ai_analysis=clause.metadata
+            )
+            db.add(clause_record)
+        
+        # Commit all clauses
+        db.commit()
+        logger.info(f"Stored {len(extracted_clauses)} clauses in database for document {document_id}")
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to store clauses in database for document {document_id}: {str(e)}")
+        db.rollback()
+        return False
 
 
 @router.get("/{document_id}", response_model=DocumentStatusResponse)

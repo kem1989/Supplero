@@ -86,9 +86,30 @@ class Document(Base):
     child_documents = relationship("Document", back_populates="parent_document")
     versions = relationship("DocumentVersion", back_populates="document")
     processing_jobs = relationship("DocumentProcessingJob", back_populates="document")
+    clauses = relationship("ContractClause", back_populates="document")
     
     # Audit trail - TODO: Add proper audit logging relationship when AuditLog model is updated
     # audit_logs = relationship("AuditLog", back_populates="document")
+
+
+class ContractClause(Base):
+    """Model for storing extracted contract clauses"""
+    __tablename__ = "contract_clauses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    contract_id = Column(Integer, ForeignKey("documents.id"), nullable=False)
+    clause_type = Column(String(100), nullable=False)  # force_majeure, export_control, etc.
+    clause_text = Column(Text, nullable=False)
+    extracted_text = Column(Text, nullable=True)
+    risk_level = Column(String(20), nullable=True)  # low, medium, high, critical
+    confidence_score = Column(Integer, nullable=True)  # 0-100 confidence
+    ai_analysis = Column(JSON, nullable=True)  # AI analysis results
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    document = relationship("Document", back_populates="clauses")
 
 
 class DocumentVersion(Base):

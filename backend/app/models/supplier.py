@@ -95,3 +95,5 @@ class SupplierRiskAssessment(Base):
     def __repr__(self):
         return f"<SupplierRiskAssessment(id={self.id}, supplier_id={self.supplier_id}, risk_score={self.risk_score})>"
 
+
+

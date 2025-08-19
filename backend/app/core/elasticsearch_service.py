@@ -120,8 +120,21 @@ class ElasticsearchService:
                     "status": {"type": "keyword"},
                     
                     # Search optimization
-                    "search_boost": {"type": "float", "default": 1.0},
-                    "is_contract": {"type": "boolean", "default": True}
+                    "search_boost": {"type": "float"},
+                    "is_contract": {"type": "boolean"},
+                    
+                    # Clause extraction support
+                    "extracted_clauses": {
+                        "type": "nested",
+                        "properties": {
+                            "clause_type": {"type": "keyword"},
+                            "clause_text": {"type": "text", "analyzer": "standard"},
+                            "extracted_text": {"type": "text", "analyzer": "standard"},
+                            "risk_level": {"type": "keyword"},
+                            "confidence_score": {"type": "float"},
+                            "ai_analysis": {"type": "object", "enabled": False}
+                        }
+                    }
                 }
             },
             "settings": {
@@ -139,7 +152,7 @@ class ElasticsearchService:
                         "ngram_filter": {
                             "type": "ngram",
                             "min_gram": 2,
-                            "max_gram": 20
+                            "max_gram": 3
                         }
                     }
                 }
@@ -296,6 +309,7 @@ class ElasticsearchService:
             "updated_at": document_data.get("updated_at"),
             "extracted_text": document_data.get("extracted_text", ""),
             "extracted_metadata": metadata,
+            "extracted_clauses": document_data.get("extracted_clauses", []),  # Add extracted clauses
             "tags": document_data.get("tags", []),
             "risk_level": "medium",
             "status": "active",
@@ -390,6 +404,31 @@ class ElasticsearchService:
                     "fuzziness": "AUTO"
                 }
             })
+        
+        # Add clause-based search support
+        if filters and filters.get("clause_types"):
+            clause_types = filters["clause_types"]
+            if isinstance(clause_types, list):
+                # Search for specific clause types in extracted text
+                clause_queries = []
+                for clause_type in clause_types:
+                    clause_queries.append({
+                        "nested": {
+                            "path": "extracted_clauses",
+                            "query": {
+                                "bool": {
+                                    "must": [
+                                        {"match": {"extracted_clauses.clause_type": clause_type}},
+                                        {"match": {"extracted_clauses.clause_text": query or clause_type}}
+                                    ]
+                                }
+                            }
+                        }
+                    })
+                
+                if clause_queries:
+                    search_body["query"]["bool"]["should"].extend(clause_queries)
+                    search_body["query"]["bool"]["minimum_should_match"] = 1
         
         if filters:
             self._add_search_filters(search_body["query"]["bool"]["filter"], filters)
