@@ -20,6 +20,22 @@ from .supplier import (
     SupplierListResponse, RiskAssessmentCreate, RiskAssessmentResponse,
     RiskLevel, CompanySize
 )
+from .supplier_search import (
+    SupplierSearchRequest, SupplierSearchResponse, SupplierSearchResult,
+    SupplierSearchFilters, SortOptions, SortOrder, SearchStatistics,
+    SupplierSearchSuggestion, SupplierSearchSuggestionsResponse, PopularSearchesResponse,
+    SemanticSearchRequest, SemanticSearchResult, SemanticSearchResponse,
+    SearchInsights, EnhancedSupplierSearchResponse
+)
+from .ai_assistant import (
+    IntentType, NaturalLanguageQueryRequest, NaturalLanguageQueryResponse,
+    UnifiedQueryRequest, UnifiedQueryResponse, SupplierSearchQueryRequest,
+    SupplierSearchResult, SupplierSearchResponse, SupplierRiskAnalysisRequest,
+    SupplierRiskAnalysisResult, SupplierRiskAnalysisResponse, SupplierComparisonRequest,
+    SupplierComparisonData, SupplierComparisonResponse, SupplierInsightsRequest,
+    SupplierInsightsResponse, ToolExecutionRequest, ToolExecutionResponse,
+    QueryIntent, IntentClassificationResult, ToolInfo, AvailableToolsResponse
+)
 
 __all__ = [
     "UserCreate", "UserLogin", "UserResponse", "TokenResponse", "TokenData",
@@ -33,5 +49,19 @@ __all__ = [
     "DocumentFeedbackResponse", "DocumentIngestionStats", "ExtractedMetadata",
     "SupplierCreate", "SupplierUpdate", "SupplierResponse", "SupplierRiskResponse",
     "SupplierListResponse", "RiskAssessmentCreate", "RiskAssessmentResponse",
-    "RiskLevel", "CompanySize"
+    "RiskLevel", "CompanySize",
+    # Supplier search schemas
+    "SupplierSearchRequest", "SupplierSearchResponse", "SupplierSearchResult",
+    "SupplierSearchFilters", "SortOptions", "SortOrder", "SearchStatistics",
+    "SupplierSearchSuggestion", "SupplierSearchSuggestionsResponse", "PopularSearchesResponse",
+    "SemanticSearchRequest", "SemanticSearchResult", "SemanticSearchResponse",
+    "SearchInsights", "EnhancedSupplierSearchResponse",
+    # AI Assistant schemas
+    "IntentType", "NaturalLanguageQueryRequest", "NaturalLanguageQueryResponse",
+    "UnifiedQueryRequest", "UnifiedQueryResponse", "SupplierSearchQueryRequest",
+    "SupplierSearchResult", "SupplierSearchResponse", "SupplierRiskAnalysisRequest",
+    "SupplierRiskAnalysisResult", "SupplierRiskAnalysisResponse", "SupplierComparisonRequest",
+    "SupplierComparisonData", "SupplierComparisonResponse", "SupplierInsightsRequest",
+    "SupplierInsightsResponse", "ToolExecutionRequest", "ToolExecutionResponse",
+    "QueryIntent", "IntentClassificationResult", "ToolInfo", "AvailableToolsResponse"
 ] 

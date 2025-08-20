@@ -192,13 +192,19 @@ class ElasticsearchService:
     async def delete_contract_document(self, document_id: str) -> bool:
         """Delete a contract document from Elasticsearch"""
         try:
-            self.client.delete(
+            logger.info(f"Attempting to delete document {document_id} from Elasticsearch index {self.index_name}")
+            
+            # Delete the document
+            response = self.client.delete(
                 index=self.index_name,
                 id=str(document_id)
             )
             
+            logger.info(f"Elasticsearch delete response: {response}")
+            
             # Refresh the index to make deletion visible
-            self.client.indices.refresh(index=self.index_name)
+            refresh_response = self.client.indices.refresh(index=self.index_name)
+            logger.info(f"Index refresh response: {refresh_response}")
             
             logger.info(
                 "Contract document deleted from Elasticsearch",
@@ -211,6 +217,57 @@ class ElasticsearchService:
             logger.error(
                 "Failed to delete contract document from Elasticsearch",
                 document_id=document_id,
+                error=str(e),
+                error_type=type(e).__name__
+            )
+            return False
+    
+    async def delete_all_documents(self, organization_id: Optional[int] = None) -> bool:
+        """Delete all documents from Elasticsearch index, optionally filtered by organization"""
+        try:
+            if organization_id:
+                # Delete documents for specific organization
+                query = {
+                    "query": {
+                        "term": {
+                            "organization_id": str(organization_id)
+                        }
+                    }
+                }
+                
+                response = self.client.delete_by_query(
+                    index=self.index_name,
+                    body=query,
+                    refresh=True
+                )
+                
+                deleted_count = response.get('deleted', 0)
+                logger.info(
+                    "Documents deleted from Elasticsearch for organization",
+                    organization_id=organization_id,
+                    deleted_count=deleted_count
+                )
+                
+            else:
+                # Delete all documents in the index
+                response = self.client.delete_by_query(
+                    index=self.index_name,
+                    body={"query": {"match_all": {}}},
+                    refresh=True
+                )
+                
+                deleted_count = response.get('deleted', 0)
+                logger.info(
+                    "All documents deleted from Elasticsearch",
+                    deleted_count=deleted_count
+                )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(
+                "Failed to delete documents from Elasticsearch",
+                organization_id=organization_id,
                 error=str(e)
             )
             return False
@@ -390,7 +447,7 @@ class ElasticsearchService:
             }
         }
         
-        if query:
+        if query and query.strip() and query != "*":
             search_body["query"]["bool"]["must"].append({
                 "multi_match": {
                     "query": query,
@@ -405,10 +462,10 @@ class ElasticsearchService:
                     "minimum_should_match": "75%"  # Require 75% of terms to match
                 }
             })
-        else:
-            # If no query provided, don't return all documents - return empty results
+        elif query == "*" or not query or not query.strip():
+            # If query is "*" or empty, return all documents
             search_body["query"]["bool"]["must"].append({
-                "match_none": {}
+                "match_all": {}
             })
         
         # Add clause-based search support

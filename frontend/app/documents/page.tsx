@@ -85,8 +85,6 @@ export default function DocumentsPage() {
     }
   };
 
-
-
   const handleDocumentUploaded = async (newDocument: Document) => {
     // Show processing started message
     setAutoProcessingMessage('Document uploaded! Processing in progress...');
@@ -103,20 +101,19 @@ export default function DocumentsPage() {
   };
 
   const handleDocumentStatusUpdate = (documentId: number, status: string) => {
-    // When a document completes processing, refresh the documents list
-    if (status === 'PROCESSED' || status === 'FAILED') {
-      // Remove from processing documents
+    setDocuments(prevDocs => 
+      prevDocs.map(doc => 
+        doc.document_id === documentId ? { ...doc, status } : doc
+      )
+    );
+    
+    // Remove from processing set if status is final
+    if (['PROCESSED', 'FAILED'].includes(status)) {
       setProcessingDocuments(prev => {
-        const newSet = new Set(Array.from(prev));
+        const newSet = new Set(prev);
         newSet.delete(documentId);
         return newSet;
       });
-      
-      // Clear auto-processing message
-      setAutoProcessingMessage(null);
-      
-      // Refresh the documents list to show the newly completed document
-      fetchDocuments();
     }
   };
 
@@ -133,25 +130,19 @@ export default function DocumentsPage() {
     <ProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
         {/* Navigation Header */}
-        <div className="glass border-b border-white/10 sticky top-0 z-50">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
-              <div className="flex items-center space-x-4">
-                <div className="w-8 h-8 bg-gradient-to-br from-green-500 to-emerald-600 rounded-lg flex items-center justify-center">
-                  <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                  </svg>
-                </div>
-                <h1 className="text-xl font-bold text-white">Document Management</h1>
-                <a
-                  href="/dashboard"
-                  className="text-sm text-slate-400 hover:text-blue-400 transition-colors flex items-center space-x-1"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                  </svg>
-                  <span>Dashboard</span>
-                </a>
+        <div className="bg-slate-800/50 border-b border-slate-700/50">
+          <div className="max-w-7xl mx-auto px-6 py-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-8">
+                <h1 className="text-2xl font-bold text-white">Supplero</h1>
+                <nav className="flex items-center space-x-6">
+                  <a href="/dashboard" className="text-slate-300 hover:text-white transition-colors flex items-center space-x-2">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                    </svg>
+                    <span>Dashboard</span>
+                  </a>
+                </nav>
               </div>
             </div>
           </div>
@@ -161,13 +152,15 @@ export default function DocumentsPage() {
         <div className="max-w-7xl mx-auto p-6">
           {/* Page Header */}
           <div className="mb-8">
-            <h1 className="text-3xl font-bold text-white mb-2">
-              📄 Document Processing Pipeline
-            </h1>
-            <p className="text-slate-300">
-              Upload contracts, invoices, and other documents for AI-powered processing, OCR, and intelligent analysis. 
-              Processing starts automatically and documents appear in the library when complete.
-            </p>
+            <div className="mb-4">
+              <h1 className="text-3xl font-bold text-white mb-2">
+                📄 Document Processing Pipeline
+              </h1>
+              <p className="text-slate-300">
+                Upload contracts, invoices, and other documents for AI-powered processing, OCR, and intelligent analysis. 
+                Processing starts automatically and documents appear in the library when complete.
+              </p>
+            </div>
             
             {/* Processing Status Info */}
             {processingDocuments.size > 0 && (
@@ -212,7 +205,7 @@ export default function DocumentsPage() {
             {documents.length === 0 && !loading && !error ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 mx-auto mb-4 bg-slate-700 rounded-full flex items-center justify-center">
-                  <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
                 </div>

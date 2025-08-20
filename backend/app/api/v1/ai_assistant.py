@@ -1,126 +1,239 @@
 """
 AI Assistant API endpoints for natural language query processing.
+Refactored version with modular architecture.
 """
 
+import structlog
 import time
-from typing import Dict, Any, Optional, List
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from typing import Dict, Any
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
-from app.core.ai_assistant import AIAssistantService, QueryIntent, IntentType
-from app.core.logging import get_logger
+from app.core.logging import get_current_trace_context
 from app.models.user import User
+from app.schemas.ai_assistant import NaturalLanguageQueryRequest, NaturalLanguageQueryResponse, ToolExecutionResponse
 
-logger = get_logger(__name__)
+# Import the new modular components
+from .ai_assistant_utils.intent_classifier import IntentClassifier, IntentType
+from .ai_assistant_utils.parameter_extractor import ParameterExtractor
+from .ai_assistant_utils.response_formatter import ResponseFormatter
+
+# Import handlers
+from .handlers.contract_handlers import (
+    execute_search_contracts,
+    execute_get_details,
+    execute_export,
+    execute_search_clauses,
+    execute_analyze_risk,
+    execute_compare_clauses
+)
+from .handlers.supplier_handlers import (
+    execute_search_suppliers,
+    execute_analyze_supplier_risk,
+    execute_compare_suppliers,
+    execute_supplier_insights
+)
+from .handlers.cross_system_handlers import (
+    execute_suppliers_with_risky_contracts,
+    execute_suppliers_with_expiring_contracts,
+    execute_suppliers_by_contract_clauses,
+    execute_contracts_by_supplier_risk,
+    execute_unified_risk_search
+)
+
+logger = structlog.get_logger(__name__)
 
 router = APIRouter(prefix="/ai-assistant", tags=["ai-assistant"])
 
 
-# Request/Response models
-class NaturalLanguageQueryRequest(BaseModel):
-    """Request model for natural language queries"""
-    query: str = "Find contracts with supplier ABC Corp"
-    user_context: Optional[Dict[str, Any]] = None
+class AIAssistantService:
+    """Main AI Assistant service with modular architecture"""
+    
+    def __init__(self):
+        self.intent_classifier = IntentClassifier()
+        self.parameter_extractor = ParameterExtractor()
+        self.response_formatter = ResponseFormatter()
+        
+        # Handler mapping
+        self.handlers = {
+            IntentType.SEARCH_CONTRACTS: execute_search_contracts,
+            IntentType.GET_DETAILS: execute_get_details,
+            IntentType.EXPORT: execute_export,
+            IntentType.SEARCH_CLAUSES: execute_search_clauses,
+            IntentType.ANALYZE_RISK: execute_analyze_risk,
+            IntentType.COMPARE_CLAUSES: execute_compare_clauses,
+            
+            IntentType.SEARCH_SUPPLIERS: execute_search_suppliers,
+            IntentType.ANALYZE_SUPPLIER_RISK: execute_analyze_supplier_risk,
+            IntentType.COMPARE_SUPPLIERS: execute_compare_suppliers,
+            IntentType.SUPPLIER_INSIGHTS: execute_supplier_insights,
+            
+            IntentType.SUPPLIERS_WITH_RISKY_CONTRACTS: execute_suppliers_with_risky_contracts,
+            IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS: execute_suppliers_with_expiring_contracts,
+            IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES: execute_suppliers_by_contract_clauses,
+            IntentType.CONTRACTS_BY_SUPPLIER_RISK: execute_contracts_by_supplier_risk,
+            IntentType.UNIFIED_RISK_SEARCH: execute_unified_risk_search
+        }
+    
+    async def process_query(
+        self,
+        query: str,
+        db: Session,
+        current_user: User
+    ) -> Dict[str, Any]:
+        """
+        Process a natural language query through the complete AI pipeline.
+        
+        Args:
+            query: Natural language query from user
+            db: Database session
+            current_user: Current authenticated user
+            
+        Returns:
+            Formatted response dictionary
+        """
+        start_time = time.time()
+        
+        try:
+            logger.info(
+                "Processing AI assistant query",
+                query=query,
+                user_id=current_user.id,
+                organization_id=current_user.organization_id
+            )
+            
+            # Step 1: Classify intent
+            classification_result = await self.intent_classifier.classify_intent(query)
+            
+            logger.info(
+                "Intent classified",
+                intent=classification_result.intent.value,
+                confidence=classification_result.confidence,
+                reasoning=classification_result.reasoning
+            )
+            
+            # Step 2: Extract parameters
+            parameters = await self.parameter_extractor.extract_parameters(
+                query, classification_result.intent
+            )
+            
+            logger.info(
+                "Parameters extracted",
+                parameters=parameters,
+                intent=classification_result.intent.value
+            )
+            
+            # Step 3: Execute appropriate handler
+            # Add original query to parameters for RAG semantic search
+            parameters["query"] = query
+            execution_result = await self._execute_handler(
+                classification_result.intent,
+                parameters,
+                db,
+                current_user
+            )
+            
+            # Step 4: Format response
+            processing_time_ms = (time.time() - start_time) * 1000
+            
+            formatted_response = self.response_formatter.format_response(
+                intent=classification_result.intent,
+                execution_result=execution_result,
+                query=query,
+                processing_time_ms=processing_time_ms
+            )
+            
+            # Add classification info
+            formatted_response["intent_classification"] = {
+                "intent": classification_result.intent.value,
+                "confidence": classification_result.confidence,
+                "reasoning": classification_result.reasoning
+            }
+            
+            # Add helpful suggestions
+            formatted_response = self.response_formatter.add_helpful_suggestions(
+                formatted_response, classification_result.intent
+            )
+            
+            logger.info(
+                "Query processed successfully",
+                intent=classification_result.intent.value,
+                processing_time_ms=processing_time_ms,
+                success=formatted_response.get("success", False)
+            )
+            
+            return formatted_response
+            
+        except Exception as e:
+            processing_time_ms = (time.time() - start_time) * 1000
+            
+            logger.error(
+                "Failed to process AI assistant query",
+                query=query,
+                error=str(e),
+                processing_time_ms=processing_time_ms,
+                exc_info=True
+            )
+            
+            return {
+                "query": query,
+                "intent": "UNKNOWN",
+                "success": False,
+                "error": str(e),
+                "message": "Failed to process query",
+                "processing_time_ms": processing_time_ms,
+                "timestamp": time.time()
+            }
+    
+    async def _execute_handler(
+        self,
+        intent: IntentType,
+        parameters: Dict[str, Any],
+        db: Session,
+        current_user: User
+    ) -> Dict[str, Any]:
+        """Execute the appropriate handler for the given intent"""
+        
+        handler = self.handlers.get(intent)
+        
+        if not handler:
+            logger.warning(f"No handler found for intent: {intent}")
+            return {
+                "message": f"Handler not implemented for intent: {intent.value}",
+                "parameters_used": parameters,
+                "performance_met": False,
+                "error": f"Unsupported intent: {intent.value}"
+            }
+        
+        try:
+            result = await handler(parameters, db, current_user)
+            return result
+            
+        except Exception as e:
+            logger.error(
+                f"Handler execution failed for intent: {intent}",
+                error=str(e),
+                parameters=parameters,
+                exc_info=True
+            )
+            return {
+                "message": f"Handler execution failed for {intent.value}",
+                "parameters_used": parameters,
+                "performance_met": False,
+                "error": str(e)
+            }
 
 
-class NaturalLanguageQueryResponse(BaseModel):
-    """Response model for natural language query processing"""
-    query_id: str
-    original_query: str
-    intent: str
-    confidence: float
-    parameters: Dict[str, Any]
-    confidence_threshold_met: bool
-    suggested_actions: list
-    error_message: Optional[str] = None
-
-
-class ToolExecutionResponse(BaseModel):
-    """Response model for tool execution"""
-    query_id: str
-    original_query: str
-    intent: str
-    confidence: float
-    tool_executed: str
-    execution_result: Dict[str, Any]
-    execution_time_ms: float
-    success: bool
-    error_message: Optional[str] = None
-
-
-class AvailableToolsResponse(BaseModel):
-    """Response model for available tools"""
-    tools: Dict[str, Dict[str, Any]]
-    total_tools: int
-    user_role: str
-    organization_id: int
-
-
-# New models for clause-based queries
-class ClauseSearchRequest(BaseModel):
-    """Request model for clause-based searches"""
-    clause_types: List[str]
-    clause_content: Optional[str] = None
-    clause_conditions: Optional[Dict[str, Any]] = None
-    risk_factors: Optional[List[str]] = None
-    filters: Optional[Dict[str, Any]] = None
-    page: int = 1
-    page_size: int = 20
-
-
-class ClauseSearchResponse(BaseModel):
-    """Response model for clause-based searches"""
-    documents: List[Dict[str, Any]]
-    total_count: int
-    search_time_ms: float
-    clause_analysis: Dict[str, Any]
-    risk_assessment: Dict[str, Any]
-    search_strategy: str
-    performance_met: bool
-
-
-class RiskAnalysisRequest(BaseModel):
-    """Request model for risk analysis"""
-    risk_types: List[str]
-    clause_analysis: Optional[Dict[str, Any]] = None
-    supplier_risk: Optional[Dict[str, Any]] = None
-    regulatory_changes: Optional[List[str]] = None
-    time_period: Optional[str] = None
-
-
-class RiskAnalysisResponse(BaseModel):
-    """Response model for risk analysis"""
-    risk_assessment: Dict[str, Any]
-    clause_analysis: Dict[str, Any]
-    regulatory_impact: Dict[str, Any]
-    recommendations: List[str]
-
-
-class ClauseComparisonRequest(BaseModel):
-    """Request model for clause comparison"""
-    clause_type: str
-    comparison_criteria: List[str]
-    contract_ids: Optional[List[str]] = None
-    supplier_groups: Optional[List[str]] = None
-    benchmark_standards: Optional[List[str]] = None
-
-
-class ClauseComparisonResponse(BaseModel):
-    """Response model for clause comparison"""
-    comparison_results: Dict[str, Any]
-    benchmark_analysis: Dict[str, Any]
-    recommendations: List[str]
+# Initialize the service
+ai_service = AIAssistantService()
 
 
 @router.post("/query", response_model=NaturalLanguageQueryResponse)
 async def process_natural_language_query(
-    request: NaturalLanguageQueryRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    query_request: NaturalLanguageQueryRequest,
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """
     Process a natural language query and return intent classification with parameters.
@@ -129,819 +242,171 @@ async def process_natural_language_query(
     1. What the user wants to do (intent)
     2. What parameters are needed (extracted from the query)
     3. Confidence level in the classification
+    
+    Note: This endpoint only classifies intent - use /execute to actually run the query.
     """
+    trace_context = get_current_trace_context()
+    
     try:
+        # TODO: Get current user from authentication
+        # For now, using a dummy user - in production this would come from auth middleware
+        current_user = User(
+            id=1,
+            email="test@example.com",
+            organization_id=1
+        )
+        
         logger.info(
-            "Processing natural language query",
+            "Processing natural language query for classification",
+            query=query_request.query,
             user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            query=request.query
+            organization_id=current_user.organization_id
         )
         
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
+        # Step 1: Classify intent
+        classification_result = await ai_service.intent_classifier.classify_intent(query_request.query)
         
-        # Process the query
-        query_intent = await ai_service.process_query(
-            query=request.query,
-            user_context={
-                "user_id": current_user.id,
-                "organization_id": current_user.organization_id,
-                "role": current_user.role
-            }
+        # Step 2: Extract parameters
+        parameters = await ai_service.parameter_extractor.extract_parameters(
+            query_request.query, classification_result.intent
         )
         
-        # Validate confidence threshold (>90%)
-        confidence_met = ai_service.validate_intent_confidence(query_intent)
+        # Determine if confidence threshold is met (>0.8)
+        confidence_threshold_met = classification_result.confidence >= 0.8
         
         # Prepare response
-        response = NaturalLanguageQueryResponse(
-            query_id=f"query_{current_user.id}_{hash(request.query) % 10000}",
-            original_query=request.query,
-            intent=query_intent.intent.value,
-            confidence=query_intent.confidence,
-            parameters=query_intent.parameters,
-            confidence_threshold_met=confidence_met,
-            suggested_actions=[],
-            error_message=None
-        )
+        response_data = {
+            "query_id": f"query_{current_user.id}_{hash(query_request.query) % 10000}",
+            "original_query": query_request.query,
+            "intent": classification_result.intent.value,
+            "confidence": classification_result.confidence,
+            "parameters": parameters,
+            "confidence_threshold_met": confidence_threshold_met,
+            "reasoning": classification_result.reasoning,
+            "suggested_actions": [],
+            "error_message": None
+        }
         
-        # Add suggested actions based on intent
-        if confidence_met:
-            response.suggested_actions = _get_suggested_actions(query_intent.intent)
+        # Add error message if confidence is low
+        if not confidence_threshold_met:
+            response_data["error_message"] = "Low confidence in intent recognition. Please rephrase your query."
         else:
-            response.error_message = "Low confidence in intent recognition. Please rephrase your query."
+            # Add suggested actions based on intent
+            response_data["suggested_actions"] = [
+                f"Execute {classification_result.intent.value.lower().replace('_', ' ')}",
+                "Refine parameters if needed",
+                "Use /execute endpoint to run the query"
+            ]
         
         logger.info(
-            "Query processed successfully",
-            query_id=response.query_id,
-            intent=response.intent,
-            confidence=response.confidence,
-            confidence_threshold_met=confidence_met
+            "Query classification completed",
+            intent=classification_result.intent.value,
+            confidence=classification_result.confidence,
+            confidence_threshold_met=confidence_threshold_met
         )
         
-        return response
+        return response_data
         
     except Exception as e:
         logger.error(
-            "Failed to process natural language query",
-            user_id=current_user.id,
-            query=request.query,
-            error=str(e)
+            "AI query classification failed",
+            query=query_request.query,
+            error=str(e),
+            **trace_context,
+            exc_info=True
         )
-        
         raise HTTPException(
-            status_code=500,
-            detail=f"Failed to process query: {str(e)}"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Query classification failed: {str(e)}"
         )
 
 
 @router.post("/execute", response_model=ToolExecutionResponse)
-async def execute_tool_for_intent(
-    request: NaturalLanguageQueryRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+async def execute_ai_query(
+    query_request: NaturalLanguageQueryRequest,
+    request: Request,
+    db: Session = Depends(get_db)
 ):
     """
-    Execute the appropriate tool based on the identified intent.
+    Execute a natural language query using the AI Assistant.
     
-    This endpoint:
-    1. Processes the natural language query
-    2. Identifies the intent and parameters
-    3. Executes the corresponding tool
-    4. Returns the results
+    This endpoint processes natural language queries and returns structured responses
+    for contract and supplier management operations.
     """
+    trace_context = get_current_trace_context()
+    start_time = time.time()
+    
     try:
-        logger.info(
-            "Executing tool for natural language query",
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            query=request.query
+        # TODO: Get current user from authentication
+        # For now, using a dummy user - in production this would come from auth middleware
+        current_user = User(
+            id=1,
+            email="test@example.com",
+            organization_id=1
         )
         
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Process the query to get intent and parameters
-        query_intent = await ai_service.process_query(
-            query=request.query,
-            user_context={
-                "user_id": current_user.id,
-                "organization_id": current_user.organization_id,
-                "role": current_user.role
-            }
-        )
-        
-        # Validate confidence threshold
-        if not ai_service.validate_intent_confidence(query_intent):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Low confidence in intent recognition ({query_intent.confidence:.2f}). Please rephrase your query."
-            )
-        
-        # Execute the appropriate tool based on intent
-        execution_result = await _execute_tool_for_intent(
-            query_intent=query_intent,
+        # Process the query
+        result = await ai_service.process_query(
+            query=query_request.query,
             db=db,
             current_user=current_user
         )
         
-        logger.info(
-            "Tool executed successfully",
-            intent=query_intent.intent.value,
-            tool_executed=execution_result.get("tool_name"),
-            execution_time_ms=execution_result.get("execution_time_ms")
+        # Calculate execution time
+        execution_time_ms = (time.time() - start_time) * 1000
+        
+        # Format response according to ToolExecutionResponse schema
+        tool_response = ToolExecutionResponse(
+            tool_name=result.get("intent", "unknown"),
+            result=result,
+            execution_time_ms=execution_time_ms,
+            performance_met=result.get("success", False),
+            error_message=result.get("error") if not result.get("success", False) else None
         )
         
+        return tool_response
+        
+    except Exception as e:
+        execution_time_ms = (time.time() - start_time) * 1000
+        
+        logger.error(
+            "AI query execution failed",
+            query=query_request.query,
+            error=str(e),
+            **trace_context,
+            exc_info=True
+        )
+        
+        # Return error response in the correct format
         return ToolExecutionResponse(
-            query_id=f"exec_{current_user.id}_{hash(request.query) % 10000}",
-            original_query=request.query,
-            intent=query_intent.intent.value,
-            confidence=query_intent.confidence,
-            tool_executed=execution_result.get("tool_name"),
-            execution_result=execution_result.get("result"),
-            execution_time_ms=execution_result.get("execution_time_ms"),
-            success=True,
-            error_message=None
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(
-            "Failed to execute tool for query",
-            user_id=current_user.id,
-            query=request.query,
-            error=str(e)
-        )
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to execute tool: {str(e)}"
+            tool_name="error",
+            result={"error": str(e), "query": query_request.query},
+            execution_time_ms=execution_time_ms,
+            performance_met=False,
+            error_message=str(e)
         )
 
 
-@router.get("/tools", response_model=AvailableToolsResponse)
-async def get_available_tools(
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Get information about available tools and their capabilities.
-    
-    This endpoint provides:
-    1. List of available tools
-    2. Tool descriptions and parameters
-    3. Example queries for each tool
-    """
-    try:
-        ai_service = AIAssistantService()
-        tools = ai_service.get_available_tools()
-        
-        return AvailableToolsResponse(
-            tools=tools,
-            total_tools=len(tools),
-            user_role=current_user.role,
-            organization_id=current_user.organization_id
-        )
-        
-    except Exception as e:
-        logger.error(
-            "Failed to get available tools",
-            user_id=current_user.id,
-            error=str(e)
-        )
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Failed to get available tools: {str(e)}"
-        )
-
-
-@router.post("/search-contracts")
-async def search_contracts(
-    request: NaturalLanguageQueryRequest,
-    page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
-    sort_by: str = Query("relevance", regex="^(relevance|date|amount)$"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Dedicated endpoint for contract search with natural language queries.
-    
-    This endpoint:
-    1. Processes natural language queries for contract search
-    2. Uses the Elasticsearch service for fast (<500ms) search
-    3. Returns AI-generated insights along with search results
-    """
-    try:
-        logger.info(
-            "Processing contract search request",
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            query=request.query,
-            page=page,
-            page_size=page_size
-        )
-        
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Process the query to extract intent and parameters
-        query_intent = await ai_service.process_query(
-            query=request.query,
-            user_context={
-                "user_id": current_user.id,
-                "organization_id": current_user.organization_id,
-                "role": current_user.role
-            }
-        )
-        
-        # Validate that this is a search intent
-        if query_intent.intent != IntentType.SEARCH_CONTRACTS:
-            return JSONResponse(
-                status_code=400,
-                content={
-                    "error": "Query is not a contract search request",
-                    "detected_intent": query_intent.intent.value,
-                    "suggested_action": "Use a search-related query like 'Find contracts with supplier ABC Corp'"
-                }
-            )
-        
-        # Extract search parameters
-        filters = {
-            "supplier": query_intent.parameters.get("supplier"),
-            "amount_min": query_intent.parameters.get("amount_min"),
-            "amount_max": query_intent.parameters.get("amount_max"),
-            "date_from": query_intent.parameters.get("date_from"),
-            "date_to": query_intent.parameters.get("date_to"),
-            "contract_type": query_intent.parameters.get("contract_type"),
-            "tags": query_intent.parameters.get("tags"),
-            "organization_id": current_user.organization_id
-        }
-        
-        # Remove None values
-        filters = {k: v for k, v in filters.items() if v is not None}
-        
-        # Execute search
-        search_result = await ai_service.search_contracts(
-            query=request.query,
-            filters=filters,
-            page=page,
-            page_size=page_size,
-            sort_by=sort_by
-        )
-        
-        # Add query processing metadata
-        search_result["query_processing"] = {
-            "intent": query_intent.intent.value,
-            "confidence": query_intent.confidence,
-            "extracted_parameters": query_intent.parameters,
-            "confidence_threshold_met": query_intent.confidence >= 0.9
-        }
-        
-        logger.info(
-            "Contract search completed successfully",
-            user_id=current_user.id,
-            query=request.query,
-            results_count=search_result.get("total_count", 0),
-            search_time_ms=search_result.get("search_time_ms", 0),
-            performance_met=search_result.get("performance_met", False)
-        )
-        
-        return search_result
-        
-    except Exception as e:
-        logger.error(
-            "Contract search failed",
-            user_id=current_user.id,
-            query=request.query,
-            error=str(e)
-        )
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Contract search failed: {str(e)}"
-        )
-
-
-async def _execute_tool_for_intent(
-    query_intent: QueryIntent,
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """
-    Execute the appropriate tool based on the identified intent.
-    
-    Args:
-        query_intent: The processed query intent
-        db: Database session
-        current_user: Current authenticated user
-        
-    Returns:
-        Dictionary containing execution results
-    """
-    import time
-    start_time = time.time()
-    
-    try:
-        if query_intent.intent == IntentType.SEARCH_CONTRACTS:
-            result = await _execute_search_contracts(
-                parameters=query_intent.parameters,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "SEARCH_CONTRACTS"
-            
-        elif query_intent.intent == IntentType.SEARCH_CLAUSES:
-            # Ensure the raw natural language query is included for downstream search
-            _params_with_raw = dict(query_intent.parameters or {})
-            _params_with_raw.setdefault("raw_query", query_intent.raw_query)
-            result = await _execute_search_clauses(
-                parameters=_params_with_raw,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "SEARCH_CLAUSES"
-            
-        elif query_intent.intent == IntentType.ANALYZE_RISK:
-            result = await _execute_analyze_risk(
-                parameters=query_intent.parameters,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "ANALYZE_RISK"
-            
-        elif query_intent.intent == IntentType.COMPARE_CLAUSES:
-            result = await _execute_compare_clauses(
-                parameters=query_intent.parameters,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "COMPARE_CLAUSES"
-            
-        elif query_intent.intent == IntentType.GET_DETAILS:
-            result = await _execute_get_details(
-                parameters=query_intent.parameters,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "GET_DETAILS"
-            
-        elif query_intent.intent == IntentType.EXPORT:
-            result = await _execute_export(
-                parameters=query_intent.parameters,
-                db=db,
-                current_user=current_user
-            )
-            tool_name = "EXPORT"
-            
-        else:
-            raise ValueError(f"Unknown intent: {query_intent.intent}")
-        
-        execution_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-        
-        return {
-            "tool_name": tool_name,
-            "result": result,
-            "execution_time_ms": round(execution_time, 2)
-        }
-        
-    except Exception as e:
-        logger.error(
-            "Tool execution failed",
-            intent=query_intent.intent.value,
-            parameters=query_intent.parameters,
-            error=str(e)
-        )
-        raise
-
-
-async def _execute_search_contracts(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute contract search based on extracted parameters"""
-    try:
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Extract search parameters
-        query = parameters.get("query", "")
-        filters = {
-            "supplier": parameters.get("supplier"),
-            "amount_min": parameters.get("amount_min"),
-            "amount_max": parameters.get("amount_max"),
-            "date_from": parameters.get("date_from"),
-            "date_to": parameters.get("date_to"),
-            "contract_type": parameters.get("contract_type"),
-            "tags": parameters.get("tags"),
-            "organization_id": current_user.organization_id
-        }
-        
-        # Remove None values
-        filters = {k: v for k, v in filters.items() if v is not None}
-        
-        # Execute search using AI assistant service
-        search_result = await ai_service.search_contracts(
-            query=query,
-            filters=filters,
-            page=1,
-            page_size=20,
-            sort_by="relevance"
-        )
-        
-        return {
-            "message": "Contract search executed successfully",
-            "parameters_used": parameters,
-            "search_results": search_result,
-            "search_criteria": filters,
-            "performance_met": search_result.get("performance_met", False)
-        }
-        
-    except Exception as e:
-        logger.error("Contract search execution failed", error=str(e))
-        return {
-            "message": "Contract search failed",
-            "parameters_used": parameters,
-            "error": str(e),
-            "search_results": {
-                "documents": [],
-                "total_count": 0,
-                "search_time_ms": 0
-            },
-            "performance_met": False
-        }
-
-
-async def _execute_get_details(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute document details retrieval based on extracted parameters"""
-    # TODO: Implement actual document details retrieval
-    # For now, return mock data
+@router.get("/health")
+async def ai_assistant_health():
+    """Health check endpoint for AI Assistant service"""
     return {
-        "message": "Document details retrieved",
-        "parameters_used": parameters,
-        "document_info": {
-            "id": parameters.get("document_id", "unknown"),
-            "status": "processed"
-        }
+        "status": "healthy",
+        "service": "ai-assistant",
+        "handlers_loaded": len(ai_service.handlers),
+        "available_intents": [intent.value for intent in ai_service.handlers.keys()]
     }
 
 
-async def _execute_export(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute data export based on extracted parameters"""
-    # TODO: Implement actual export logic
-    # For now, return mock data
+@router.get("/intents")
+async def get_available_intents():
+    """Get list of available intents and their descriptions"""
     return {
-        "message": "Export executed",
-        "parameters_used": parameters,
-        "export_format": parameters.get("format", "csv"),
-        "export_status": "completed"
+        "available_intents": [
+            {
+                "intent": intent.value,
+                "description": ai_service.intent_classifier.tools.get(intent.value, {}).get("description", "No description available")
+            }
+            for intent in IntentType if intent != IntentType.UNKNOWN
+        ]
     }
-
-
-async def _execute_search_clauses(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute clause-based search based on extracted parameters"""
-    try:
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Extract clause search parameters
-        clause_types = parameters.get("clause_types", [])
-        clause_content = parameters.get("clause_content")
-        clause_conditions = parameters.get("clause_conditions")
-        risk_factors = parameters.get("risk_factors", [])
-        filters = parameters.get("filters", {})
-        raw_query = parameters.get("raw_query")
-        
-        # Add organization filter
-        filters["organization_id"] = current_user.organization_id
-        
-        # Execute clause-based search
-        search_result = await ai_service.search_clauses(
-            clause_types=clause_types,
-            clause_content=clause_content,
-            clause_conditions=clause_conditions,
-            risk_factors=risk_factors,
-            raw_query=raw_query,
-            filters=filters,
-            page=1,
-            page_size=20
-        )
-        
-        return {
-            "message": "Clause-based search executed successfully",
-            "parameters_used": parameters,
-            "search_results": search_result,
-            "search_criteria": {
-                "clause_types": clause_types,
-                "risk_factors": risk_factors,
-                "filters": filters
-            }
-        }
-        
-    except Exception as e:
-        logger.error("Clause-based search execution failed", error=str(e))
-        return {
-            "message": "Clause-based search failed",
-            "parameters_used": parameters,
-            "error": str(e),
-            "search_results": {
-                "documents": [],
-                "total_count": 0,
-                "search_time_ms": 0
-            }
-        }
-
-
-async def _execute_analyze_risk(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute risk analysis based on extracted parameters"""
-    try:
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Extract risk analysis parameters
-        risk_types = parameters.get("risk_types", [])
-        clause_analysis = parameters.get("clause_analysis")
-        supplier_risk = parameters.get("supplier_risk")
-        regulatory_changes = parameters.get("regulatory_changes", [])
-        time_period = parameters.get("time_period")
-        
-        # Execute risk analysis
-        risk_result = await ai_service.analyze_risk(
-            risk_types=risk_types,
-            clause_analysis=clause_analysis,
-            supplier_risk=supplier_risk,
-            regulatory_changes=regulatory_changes,
-            time_period=time_period
-        )
-        
-        return {
-            "message": "Risk analysis executed successfully",
-            "parameters_used": parameters,
-            "risk_results": risk_result,
-            "analysis_criteria": {
-                "risk_types": risk_types,
-                "regulatory_changes": regulatory_changes,
-                "time_period": time_period
-            }
-        }
-        
-    except Exception as e:
-        logger.error("Risk analysis execution failed", error=str(e))
-        return {
-            "message": "Risk analysis failed",
-            "parameters_used": parameters,
-            "error": str(e),
-            "risk_results": {}
-        }
-
-
-async def _execute_compare_clauses(
-    parameters: Dict[str, Any],
-    db: Session,
-    current_user: User
-) -> Dict[str, Any]:
-    """Execute clause comparison based on extracted parameters"""
-    try:
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Extract clause comparison parameters
-        clause_type = parameters.get("clause_type")
-        comparison_criteria = parameters.get("comparison_criteria", [])
-        contract_ids = parameters.get("contract_ids")
-        supplier_groups = parameters.get("supplier_groups", [])
-        benchmark_standards = parameters.get("benchmark_standards", [])
-        
-        # Execute clause comparison
-        comparison_result = await ai_service.compare_clauses(
-            clause_type=clause_type,
-            comparison_criteria=comparison_criteria,
-            contract_ids=contract_ids,
-            supplier_groups=supplier_groups,
-            benchmark_standards=benchmark_standards
-        )
-        
-        return {
-            "message": "Clause comparison executed successfully",
-            "parameters_used": parameters,
-            "comparison_results": comparison_result,
-            "comparison_criteria": {
-                "clause_type": clause_type,
-                "criteria": comparison_criteria,
-                "supplier_groups": supplier_groups
-            }
-        }
-        
-    except Exception as e:
-        logger.error("Clause comparison execution failed", error=str(e))
-        return {
-            "message": "Clause comparison failed",
-            "parameters_used": parameters,
-            "error": str(e),
-            "comparison_results": {}
-        }
-
-
-def _get_suggested_actions(intent: IntentType) -> list:
-    """Get suggested actions based on the identified intent"""
-    if intent == IntentType.SEARCH_CONTRACTS:
-        return [
-            "Execute search with extracted parameters",
-            "Modify search criteria if needed",
-            "View search results"
-        ]
-    elif intent == IntentType.SEARCH_CLAUSES:
-        return [
-            "Execute clause-based search",
-            "Review risk assessment",
-            "Analyze compliance gaps"
-        ]
-    elif intent == IntentType.ANALYZE_RISK:
-        return [
-            "Review risk analysis results",
-            "Check mitigation recommendations",
-            "Monitor risk trends"
-        ]
-    elif intent == IntentType.COMPARE_CLAUSES:
-        return [
-            "Review clause comparison",
-            "Analyze best practices",
-            "Identify standardization opportunities"
-        ]
-    elif intent == IntentType.GET_DETAILS:
-        return [
-            "View document details",
-            "Download document if available",
-            "View extracted metadata"
-        ]
-    elif intent == IntentType.EXPORT:
-        return [
-            "Download exported file",
-            "View export summary",
-            "Schedule recurring export"
-        ]
-    else:
-        return ["Please rephrase your query"]
-
-
-# New endpoints for enhanced clause-based functionality
-
-@router.post("/search-clauses", response_model=ClauseSearchResponse)
-async def search_clauses(
-    request: ClauseSearchRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Search for contracts based on specific clause content and characteristics.
-    
-    This endpoint implements a hybrid approach combining:
-    1. Fast Elasticsearch search for initial contract filtering
-    2. RAG-based analysis for complex clause content understanding
-    """
-    try:
-        logger.info(
-            "Executing clause-based search",
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            clause_types=request.clause_types
-        )
-        
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Execute clause-based search
-        search_result = await ai_service.search_clauses(
-            clause_types=request.clause_types,
-            clause_content=request.clause_content,
-            clause_conditions=request.clause_conditions,
-            risk_factors=request.risk_factors,
-            filters=request.filters,
-            page=request.page,
-            page_size=request.page_size
-        )
-        
-        return ClauseSearchResponse(**search_result)
-        
-    except Exception as e:
-        logger.error(
-            "Clause-based search failed",
-            user_id=current_user.id,
-            error=str(e)
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Clause-based search failed: {str(e)}"
-        )
-
-
-@router.post("/analyze-risk", response_model=RiskAnalysisResponse)
-async def analyze_risk(
-    request: RiskAnalysisRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Analyze contract risk based on clause analysis and external factors.
-    
-    This endpoint provides comprehensive risk assessment including:
-    - Financial, compliance, and operational risk analysis
-    - Regulatory change impact assessment
-    - Mitigation recommendations
-    """
-    try:
-        logger.info(
-            "Executing risk analysis",
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            risk_types=request.risk_types
-        )
-        
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Execute risk analysis
-        risk_result = await ai_service.analyze_risk(
-            risk_types=request.risk_types,
-            clause_analysis=request.clause_analysis,
-            supplier_risk=request.supplier_risk,
-            regulatory_changes=request.regulatory_changes,
-            time_period=request.time_period
-        )
-        
-        return RiskAnalysisResponse(**risk_result)
-        
-    except Exception as e:
-        logger.error(
-            "Risk analysis failed",
-            user_id=current_user.id,
-            error=str(e)
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Risk analysis failed: {str(e)}"
-        )
-
-
-@router.post("/compare-clauses", response_model=ClauseComparisonResponse)
-async def compare_clauses(
-    request: ClauseComparisonRequest,
-    current_user: User = Depends(get_current_user)
-):
-    """
-    Compare clause structures and terms across multiple contracts.
-    
-    This endpoint provides detailed analysis including:
-    - Clause variation analysis across contracts
-    - Benchmark comparison with industry standards
-    - Best practice recommendations
-    """
-    try:
-        logger.info(
-            "Executing clause comparison",
-            user_id=current_user.id,
-            organization_id=current_user.organization_id,
-            clause_type=request.clause_type
-        )
-        
-        # Initialize AI assistant service
-        ai_service = AIAssistantService()
-        
-        # Execute clause comparison
-        comparison_result = await ai_service.compare_clauses(
-            clause_type=request.clause_type,
-            comparison_criteria=request.comparison_criteria,
-            contract_ids=request.contract_ids,
-            supplier_groups=request.supplier_groups,
-            benchmark_standards=request.benchmark_standards
-        )
-        
-        return ClauseComparisonResponse(**comparison_result)
-        
-    except Exception as e:
-        logger.error(
-            "Clause comparison failed",
-            user_id=current_user.id,
-            error=str(e)
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"Clause comparison failed: {str(e)}"
-        )

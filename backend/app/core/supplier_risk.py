@@ -60,7 +60,24 @@ class SupplierRiskService:
         "NO": 0.05,
         "DK": 0.05,
         "FI": 0.05,
-        "NZ": 0.05
+        "NZ": 0.05,
+        # Higher risk countries (keys must be uppercase to match the lookup logic)
+        "CHINA": 0.4,
+        "CN": 0.4,
+        "RUSSIA": 0.6,
+        "RU": 0.6,
+        "IRAN": 0.8,
+        "IR": 0.8,
+        "NORTH KOREA": 0.9,
+        "KP": 0.9,
+        "SYRIA": 0.7,
+        "SY": 0.7,
+        "VENEZUELA": 0.5,
+        "VE": 0.5,
+        "BELARUS": 0.5,
+        "BY": 0.5,
+        "MYANMAR": 0.6,
+        "MM": 0.6
     }
     
     @classmethod
@@ -85,11 +102,11 @@ class SupplierRiskService:
         if industry:
             industry_lower = industry.lower().replace(" ", "_")
             industry_risk = cls.INDUSTRY_RISK_FACTORS.get(industry_lower, 0.15)
-            base_score += industry_risk * 30  # Industry contributes up to 30 points
+            base_score += industry_risk * 60  # Industry contributes up to 60 points
             risk_factors["industry_risk"] = {
                 "industry": industry,
                 "risk_factor": industry_risk,
-                "contribution": industry_risk * 30
+                "contribution": industry_risk * 60
             }
         
         # Company size risk assessment
@@ -106,11 +123,11 @@ class SupplierRiskService:
         if country:
             country_upper = country.upper()
             country_risk = cls.COUNTRY_RISK_FACTORS.get(country_upper, 0.2)
-            base_score += country_risk * 20  # Country contributes up to 20 points
+            base_score += country_risk * 40  # Country contributes up to 40 points
             risk_factors["country_risk"] = {
                 "country": country,
                 "risk_factor": country_risk,
-                "contribution": country_risk * 20
+                "contribution": country_risk * 40
             }
         
         # Employee count risk (smaller companies = higher risk)

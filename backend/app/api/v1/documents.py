@@ -629,10 +629,10 @@ async def delete_document(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Delete document (soft delete - mark as archived)
+    """Delete document (hard delete - permanently remove)
     
-    Note: This performs a soft delete by marking the document as archived.
-    Archived documents are excluded from all list queries and statistics.
+    Note: This performs a hard delete and permanently removes the document
+    from both the database and Elasticsearch. This action cannot be undone.
     """
     
     try:
@@ -646,33 +646,78 @@ async def delete_document(
         if not document:
             raise HTTPException(status_code=404, detail="Document not found")
         
-        # Soft delete - mark as archived
-        document.status = DocumentStatus.ARCHIVED
-        db.commit()
+        # Get document ID for Elasticsearch deletion before removing from database
+        document_id_str = str(document_id)
         
-        # Remove document from Elasticsearch search index
+        # Remove document from Elasticsearch search index first
         try:
             from app.core.elasticsearch_service import ElasticsearchService
             es_service = ElasticsearchService()
             
-            # Delete from Elasticsearch
-            delete_success = await es_service.delete_contract_document(str(document_id))
-            if delete_success:
-                logger.info(f"Document {document_id} removed from Elasticsearch successfully")
-            else:
-                logger.warning(f"Failed to remove document {document_id} from Elasticsearch")
+            # Check if document exists in Elasticsearch before deletion
+            try:
+                doc_exists = es_service.client.exists(
+                    index=es_service.index_name,
+                    id=document_id_str
+                )
+                logger.info(f"Document {document_id} exists in Elasticsearch: {doc_exists}")
+                
+                if doc_exists:
+                    # Delete from Elasticsearch
+                    delete_success = await es_service.delete_contract_document(document_id_str)
+                    if delete_success:
+                        logger.info(f"Document {document_id} removed from Elasticsearch successfully")
+                    else:
+                        logger.warning(f"Failed to remove document {document_id} from Elasticsearch")
+                else:
+                    logger.info(f"Document {document_id} not found in Elasticsearch, skipping deletion")
+                    
+            except Exception as es_check_error:
+                logger.error(f"Failed to check if document {document_id} exists in Elasticsearch: {es_check_error}")
                 
         except Exception as indexing_error:
             logger.error(f"Elasticsearch cleanup failed for document {document_id}: {indexing_error}")
-            # Don't fail the archive operation if Elasticsearch cleanup fails
+            # Don't fail the delete operation if Elasticsearch cleanup fails
         
-        logger.info(
-            "Document archived",
-            document_id=document_id,
-            user_id=current_user.id
-        )
+        # Hard delete from database - delete related data first due to foreign key constraints
+        try:
+            # Delete related contract clauses first
+            from app.models.document import ContractClause
+            clauses_deleted = db.query(ContractClause).filter(
+                ContractClause.contract_id == document_id
+            ).delete(synchronize_session=False)
+            
+            # Delete document versions
+            from app.models.document import DocumentVersion
+            versions_deleted = db.query(DocumentVersion).filter(
+                DocumentVersion.document_id == document_id
+            ).delete(synchronize_session=False)
+            
+            # Delete document processing jobs
+            from app.models.document import DocumentProcessingJob
+            jobs_deleted = db.query(DocumentProcessingJob).filter(
+                DocumentProcessingJob.document_id == document_id
+            ).delete(synchronize_session=False)
+            
+            # Finally delete the document itself
+            db.delete(document)
+            db.commit()
+            
+            logger.info(
+                "Document permanently deleted",
+                document_id=document_id,
+                clauses_deleted=clauses_deleted,
+                versions_deleted=versions_deleted,
+                jobs_deleted=jobs_deleted,
+                user_id=current_user.id
+            )
+            
+        except Exception as db_error:
+            db.rollback()
+            logger.error(f"Database deletion failed for document {document_id}: {db_error}")
+            raise HTTPException(status_code=500, detail="Failed to delete document from database")
         
-        return {"message": "Document archived successfully", "document_id": document_id}
+        return {"message": "Document permanently deleted successfully", "document_id": document_id}
 
     except HTTPException:
         raise
@@ -683,6 +728,9 @@ async def delete_document(
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Failed to archive document")
+
+
+
 
 
 @router.post("/{document_id}/restore")

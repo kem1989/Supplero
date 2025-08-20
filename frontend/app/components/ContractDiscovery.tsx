@@ -78,34 +78,34 @@ export default function ContractDiscovery() {
 
       const data = response.data;
       console.log('Raw API response:', data); // Debug log
-      console.log('Documents from API:', data.execution_result?.search_results?.documents); // Debug documents
+      console.log('Contracts from API:', data.result?.contracts); // Debug contracts
       
-      // Transform unified endpoint response to match SearchResult interface
-      const searchResults = data.execution_result?.search_results || {};
+      // Transform AI assistant response to match SearchResult interface
+      const result = data.result || {};
       const transformedResult: SearchResult = {
-        documents: searchResults.documents || [],
-        total_count: searchResults.total_count || 0,
-        search_time_ms: searchResults.search_time_ms || data.execution_time_ms || 0,
-        performance_met: searchResults.performance_met || (data.execution_time_ms || 0) < 500,
-        search_strategy: searchResults.search_strategy,
-        search_method: searchResults.search_method,
-        fallback_reason: searchResults.fallback_reason,
+        documents: result.contracts || [],
+        total_count: result.total_found || 0,
+        search_time_ms: result.processing_time_ms || data.execution_time_ms || 0,
+        performance_met: result.performance_met || (data.execution_time_ms || 0) < 500,
+        search_strategy: result.search_strategy,
+        search_method: result.search_method,
+        fallback_reason: result.fallback_reason,
         ai_insights: {
-          summary: `Query processed as: ${data.intent || 'unknown'}`,
-          total_contracts: searchResults.total_count || 0,
-          total_value: (searchResults.documents || []).reduce((sum: number, doc: any) => 
-            sum + (doc.contract_amount || 0), 0),
+          summary: `Query processed as: ${result.intent || data.tool_name || 'unknown'}`,
+          total_contracts: result.total_found || 0,
+          total_value: (result.contracts || []).reduce((sum: number, doc: any) => 
+            sum + (doc.contract_value || 0), 0),
           suppliers_count: new Set(
-            (searchResults.documents || []).map((d: any) => d.supplier_name || d.filename)
+            (result.contracts || []).map((d: any) => d.supplier_name || d.filename)
           ).size
         },
         query_processing: {
-          intent: data.intent || 'unknown',
-          confidence: data.confidence || 0,
-          extracted_parameters: data.execution_result?.parameters_used || {},
-          confidence_threshold_met: (data.confidence || 0) >= 0.9
+          intent: result.intent || data.tool_name || 'unknown',
+          confidence: result.intent_classification?.confidence || 0,
+          extracted_parameters: result.parameters_used || {},
+          confidence_threshold_met: (result.intent_classification?.confidence || 0) >= 0.9
         },
-        clause_analysis: searchResults.clause_analysis
+        clause_analysis: result.clause_analysis
       };
       
       console.log('Transformed result:', transformedResult); // Debug log

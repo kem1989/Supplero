@@ -16,8 +16,18 @@ from app.schemas.supplier import (
     SupplierCreate, SupplierUpdate, SupplierResponse, SupplierRiskResponse,
     SupplierListResponse, RiskAssessmentCreate, RiskAssessmentResponse
 )
+from app.schemas.supplier_insights import (
+    SupplierInsightsRequest,
+    SupplierInsightsResponse,
+    TrendAnalysisResponse,
+    PredictiveAnalysisResponse,
+    BenchmarkAnalysisResponse,
+    PortfolioHealthResponse,
+    InsightType
+)
 # from app.core.audit import audit_action  # TODO: Implement proper audit integration
 from app.core.supplier_risk import SupplierRiskService
+from app.core.supplier_insights import SupplierInsightsService
 
 logger = structlog.get_logger(__name__)
 
