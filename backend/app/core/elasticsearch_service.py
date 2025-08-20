@@ -401,8 +401,14 @@ class ElasticsearchService:
                         "tags^2"
                     ],
                     "type": "best_fields",
-                    "fuzziness": "AUTO"
+                    "fuzziness": "0",  # Disable fuzzy matching for precise results
+                    "minimum_should_match": "75%"  # Require 75% of terms to match
                 }
+            })
+        else:
+            # If no query provided, don't return all documents - return empty results
+            search_body["query"]["bool"]["must"].append({
+                "match_none": {}
             })
         
         # Add clause-based search support
