@@ -94,6 +94,27 @@ async def upload_document(
             metadata = await ingestion_service.extract_metadata(document, text_content)
             document.extracted_metadata = metadata.dict()
             
+            # Automatically link contract to supplier
+            try:
+                from app.core.supplier_linking import supplier_linking_service
+                
+                logger.info(f"Starting automatic supplier linking for document {document.id}")
+                
+                linking_success = await supplier_linking_service.link_contract_to_supplier(
+                    document_id=document.id,
+                    db=db,
+                    organization_id=document.organization_id
+                )
+                
+                if linking_success:
+                    logger.info(f"Successfully linked document {document.id} to supplier")
+                else:
+                    logger.info(f"Document {document.id} linked to extracted supplier name (no database match)")
+                    
+            except Exception as linking_error:
+                logger.error(f"Supplier linking failed for document {document.id}: {linking_error}")
+                # Don't fail the upload if supplier linking fails
+            
             # Update status to PROCESSED
             document.status = DocumentStatus.PROCESSED
             document.processing_completed_at = datetime.now()

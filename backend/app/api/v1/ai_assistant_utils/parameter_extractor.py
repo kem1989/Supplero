@@ -110,53 +110,66 @@ For clause and risk analysis queries, extract these parameters:
 Return only the parameters that are explicitly mentioned in the query.
 """
         
-        elif intent in [IntentType.SEARCH_SUPPLIERS, IntentType.ANALYZE_SUPPLIER_RISK, IntentType.COMPARE_SUPPLIERS]:
+        elif intent in [IntentType.SEARCH_SUPPLIERS, IntentType.ANALYZE_SUPPLIER_RISK, IntentType.COMPARE_SUPPLIERS, IntentType.SUPPLIER_INSIGHTS]:
             return base_prompt + """
-For supplier-related queries, extract these parameters:
+For supplier-related queries, extract these parameters when mentioned:
 - supplier_name: Name of the supplier (string)
-- supplier_ids: List of supplier IDs (array of numbers)
+- supplier_names: List of supplier names (array of strings)
 - industry: Industry sector (string)
-- country: Country or location (string)
-- risk_level: Risk level like "LOW", "MEDIUM", "HIGH" (string)
-- min_risk_score: Minimum risk score (number 0-100)
-- max_risk_score: Maximum risk score (number 0-100)
-- watchlisted_only: Filter for watchlisted suppliers only (boolean)
-- risk_types: Types of risk to analyze (array of strings)
-- time_period: Time period for analysis in days (number)
-- include_news: Include news analysis (boolean)
-- include_financial: Include financial analysis (boolean)
-- benchmark_industry: Include industry benchmarks (boolean)
-- comparison_criteria: Criteria for comparison (array of strings)
-- include_history: Include historical data (boolean)
+- industries: List of industries (array of strings)
+- country: Country (string)
+- countries: List of countries (array of strings)
+- risk_level: Risk level like "low", "medium", "high", "critical" (string)
+- company_size: Company size like "small", "medium", "large" (string)
+- is_watchlisted: Whether supplier is watchlisted (boolean)
+- has_contracts: Whether supplier has contracts (boolean)
+- contract_count_min: Minimum number of contracts (number)
+- contract_count_max: Maximum number of contracts (number)
 
 Return only the parameters that are explicitly mentioned in the query.
 """
         
-        elif intent == IntentType.SUPPLIER_INSIGHTS:
+        elif intent in [IntentType.SUPPLIERS_WITH_RISKY_CONTRACTS, IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS, IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES, IntentType.CONTRACTS_BY_SUPPLIER_RISK, IntentType.UNIFIED_RISK_SEARCH]:
             return base_prompt + """
-For supplier insights queries, extract these parameters:
-- insight_type: Type of insights like "portfolio_overview", "risk_trends", "performance_analysis" (string)
-- supplier_ids: Specific suppliers to analyze (array of numbers)
-- time_period: Analysis time period in days (number)
-- industry_focus: Focus on specific industry (string)
-- risk_threshold: Risk threshold for analysis (number)
-- include_predictions: Include predictive analysis (boolean)
-- include_recommendations: Include recommendations (boolean)
-
-Return only the parameters that are explicitly mentioned in the query.
-"""
-        
-        elif intent in [IntentType.SUPPLIERS_WITH_RISKY_CONTRACTS, IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS]:
-            return base_prompt + """
-For cross-system queries, extract these parameters:
-- contract_risk_level: Risk level for contracts (string)
-- supplier_risk_level: Risk level for suppliers (string)
-- supplier_industries: Filter by industries (array of strings)
-- supplier_countries: Filter by countries (array of strings)
+For cross-system supplier-contract queries, extract these parameters when mentioned:
+- contract_risk_level: Contract risk level like "low", "medium", "high", "critical" (string)
+- supplier_risk_level: Supplier risk level like "low", "medium", "high", "critical" (string)
+- supplier_industries: List of supplier industries (array of strings)
+- supplier_countries: List of supplier countries (array of strings)
 - contract_value_min: Minimum contract value (number)
-- contract_expiring_days: Days until contract expiration (number)
-- page: Page number for results (number)
+- contract_value_max: Maximum contract value (number)
+- contract_expiring_days: Days until contract expires (number)
+- clause_types: List of clause types like "force_majeure", "termination" (array of strings)
+- page: Page number for pagination (number)
 - page_size: Number of results per page (number)
+
+Return only the parameters that are explicitly mentioned in the query.
+"""
+        
+        # NEW: Enhanced supplier-contract relationship parameter extraction
+        elif intent in [IntentType.SUPPLIERS_BY_CONTRACT_VALUE, IntentType.SUPPLIERS_WITH_CONTRACT_CRITERIA, IntentType.CONTRACTS_BY_SUPPLIER_CRITERIA, IntentType.SUPPLIER_CONTRACT_PORTFOLIO]:
+            return base_prompt + """
+For enhanced supplier-contract relationship queries, extract these parameters when mentioned:
+- contract_value_min: Minimum contract value in dollars (number)
+- contract_value_max: Maximum contract value in dollars (number)
+- contract_value_range: Contract value range like "over $5 million" (string)
+- supplier_industry: Supplier industry sector (string)
+- supplier_country: Supplier country (string)
+- supplier_risk_level: Supplier risk level like "low", "medium", "high", "critical" (string)
+- supplier_company_size: Company size like "small", "medium", "large" (string)
+- contract_status: Contract status like "active", "expired", "pending" (string)
+- contract_start_date: Contract start date (string)
+- contract_end_date: Contract end date (string)
+- contract_type: Type of contract like "service", "product", "partnership" (string)
+- payment_terms: Payment terms like "net 30", "net 60" (string)
+- contract_region: Geographic region for contracts (string)
+- supplier_name: Specific supplier name (string)
+- supplier_names: List of supplier names (array of strings)
+- has_contracts: Whether suppliers have contracts (boolean)
+- contract_count_min: Minimum number of contracts per supplier (number)
+- contract_count_max: Maximum number of contracts per supplier (number)
+- total_contract_value_min: Minimum total contract value across all contracts (number)
+- total_contract_value_max: Maximum total contract value across all contracts (number)
 
 Return only the parameters that are explicitly mentioned in the query.
 """

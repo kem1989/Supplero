@@ -10,7 +10,7 @@ import structlog
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional, Union
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func, text, distinct
+from sqlalchemy import and_, or_, func, text, distinct, Integer, Numeric
 from dataclasses import dataclass
 from enum import Enum
 
@@ -210,6 +210,17 @@ class CrossSystemSearchService:
                 exc_info=True
             )
             raise
+    
+    async def execute_search(
+        self,
+        request: CrossSystemSearchRequest,
+        db: Session,
+        organization_id: int
+    ) -> CrossSystemSearchResponse:
+        """
+        Alias for execute_cross_system_search to maintain compatibility.
+        """
+        return await self.execute_cross_system_search(request, db, organization_id)
     
     async def _search_suppliers_with_risky_contracts(
         self,
@@ -515,35 +526,51 @@ class CrossSystemSearchService:
         db: Session,
         organization_id: int
     ) -> CrossSystemSearchResponse:
-        """Find suppliers based on contract value ranges."""
+        """Find suppliers based on contract value criteria."""
         
-        # Base query
+        # Build base query for suppliers with contracts
         query = db.query(
             Supplier,
-            func.count(Document.id).label('contract_count'),
-            func.coalesce(func.sum(
-                func.cast(Document.extracted_metadata.op('->>')('total_value'), func.numeric())
-            ), 0).label('total_value')
+            func.count(distinct(Document.id)).label('contract_count'),
+            func.sum(
+                func.coalesce(
+                    Document.extracted_metadata.op('->>')('contract_amount').cast(Numeric),
+                    0
+                )
+            ).label('total_contract_value'),
+            func.max(
+                func.coalesce(
+                    Document.extracted_metadata.op('->>')('contract_amount').cast(Numeric),
+                    0
+                )
+            ).label('highest_contract_value')
         ).join(
             Document,
             Document.extracted_metadata.op('->>')('supplier_name') == Supplier.name
         ).filter(
-            Supplier.organization_id == organization_id
+            Supplier.organization_id == organization_id,
+            Document.extracted_metadata.op('->>')('contract_amount').isnot(None)
         ).group_by(Supplier.id)
         
         # Apply contract value filters
         if request.contract_value_min:
             query = query.having(
-                func.coalesce(func.sum(
-                    func.cast(Document.extracted_metadata.op('->>')('total_value'), func.numeric())
-                ), 0) >= request.contract_value_min
+                func.sum(
+                    func.coalesce(
+                        Document.extracted_metadata.op('->>')('contract_amount').cast(Numeric),
+                        0
+                    )
+                ) >= request.contract_value_min
             )
         
         if request.contract_value_max:
             query = query.having(
-                func.coalesce(func.sum(
-                    func.cast(Document.extracted_metadata.op('->>')('total_value'), func.numeric())
-                ), 0) <= request.contract_value_max
+                func.sum(
+                    func.coalesce(
+                        Document.extracted_metadata.op('->>')('contract_amount').cast(Numeric),
+                        0
+                    )
+                ) <= request.contract_value_max
             )
         
         # Apply pagination
@@ -553,7 +580,7 @@ class CrossSystemSearchService:
         
         # Convert to response format
         supplier_results = []
-        for supplier, contract_count, total_value in results:
+        for supplier, contract_count, total_value, highest_value in results:
             supplier_results.append(SupplierContractInfo(
                 supplier_id=supplier.id,
                 supplier_name=supplier.name,
@@ -562,28 +589,36 @@ class CrossSystemSearchService:
                 supplier_industry=supplier.industry,
                 supplier_country=supplier.country,
                 contract_count=contract_count,
-                total_contract_value=float(total_value) if total_value else None,
+                total_contract_value=total_value or 0,
                 highest_risk_contract_risk=None,
                 expiring_contracts_count=0,
                 recent_contracts_count=contract_count,
                 combined_risk_score=supplier.risk_score,
-                risk_factors=[f"Total contract value: ${total_value:,.2f}" if total_value else "No contract value data"],
+                risk_factors=[f"Total contract value: ${total_value:,}" if total_value else "No contract value data"],
                 last_assessment_date=supplier.last_risk_assessment,
                 created_at=supplier.created_at,
                 highest_risk_contract_id=None
             ))
         
         # Generate insights
-        total_portfolio_value = sum(s.total_contract_value or 0 for s in supplier_results)
+        value_range = ""
+        if request.contract_value_min and request.contract_value_max:
+            value_range = f"between ${request.contract_value_min:,} and ${request.contract_value_max:,}"
+        elif request.contract_value_min:
+            value_range = f"over ${request.contract_value_min:,}"
+        elif request.contract_value_max:
+            value_range = f"under ${request.contract_value_max:,}"
+        
         insights = [
-            f"Found {len(supplier_results)} suppliers matching value criteria",
-            f"Total portfolio value: ${total_portfolio_value:,.2f}",
-            f"Average contract value per supplier: ${total_portfolio_value / len(supplier_results):,.2f}" if supplier_results else "No results"
+            f"Found {len(supplier_results)} suppliers with contracts {value_range}",
+            f"Total contracts: {sum(s.contract_count for s in supplier_results)}",
+            f"Total contract value: ${sum(s.total_contract_value or 0 for s in supplier_results):,}"
         ]
         
         recommendations = [
-            "Review high-value contracts for additional risk controls",
-            "Consider volume discounts for suppliers with large contract values"
+            "Review high-value contracts for risk assessment",
+            "Monitor suppliers with significant contract exposure",
+            "Consider diversification for high-value supplier relationships"
         ]
         
         return CrossSystemSearchResponse(

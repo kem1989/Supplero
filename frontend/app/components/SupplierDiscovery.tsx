@@ -69,13 +69,22 @@ interface SearchResponse {
 
 const EXAMPLE_QUERIES = [
   "Find high-risk suppliers in pharmaceuticals",
-  "Show me suppliers with contracts over $100k",
+  "Show me suppliers with contracts over $5 million",
   "Which suppliers have negative news coverage?",
   "Find suppliers in China with medium risk",
   "Large technology companies with low risk",
   "Watchlisted suppliers in manufacturing",
   "Recent supplier assessments this month",
-  "European suppliers with high contract value"
+  "European suppliers with high contract value",
+  // NEW: Enhanced supplier-contract relationship examples
+  "Show me suppliers with contracts over $100k",
+  "Find suppliers with service contracts in technology",
+  "Suppliers with contracts expiring in 30 days",
+  "High-value contract suppliers in manufacturing",
+  "Suppliers with payment terms net 60",
+  "Contracts with suppliers in the healthcare industry",
+  "Suppliers with multiple contracts over $1M",
+  "Find suppliers with contracts in Europe over $500k"
 ];
 
 
@@ -150,7 +159,7 @@ export default function SupplierDiscovery() {
             total_suppliers: suppliers.length,
             high_risk_count: suppliers.filter(s => s.risk_level === 'HIGH' || s.risk_level === 'CRITICAL').length,
             watchlisted_count: suppliers.filter(s => s.is_watchlisted).length,
-            top_industries: [...new Set(suppliers.map(s => s.industry).filter(Boolean))].slice(0, 3)
+            top_industries: Array.from(new Set(suppliers.map(s => s.industry).filter(Boolean))).slice(0, 3)
           },
           query_processing: searchResults.query_processing || {
             intent: 'advanced_supplier_search',
@@ -248,7 +257,6 @@ export default function SupplierDiscovery() {
           query_processing: {
             intent: data.tool_name || 'unknown',
             confidence: executionResult.intent_classification?.confidence || 1.0,
-            extracted_parameters: searchResults.parameters_used || {},
             confidence_threshold_met: true
           }
         };

@@ -36,6 +36,12 @@ class IntentType(str, Enum):
     CONTRACTS_BY_SUPPLIER_RISK = "CONTRACTS_BY_SUPPLIER_RISK"
     UNIFIED_RISK_SEARCH = "UNIFIED_RISK_SEARCH"
     
+    # NEW: Enhanced supplier-contract relationship intents
+    SUPPLIERS_BY_CONTRACT_VALUE = "SUPPLIERS_BY_CONTRACT_VALUE"
+    SUPPLIERS_WITH_CONTRACT_CRITERIA = "SUPPLIERS_WITH_CONTRACT_CRITERIA"
+    CONTRACTS_BY_SUPPLIER_CRITERIA = "CONTRACTS_BY_SUPPLIER_CRITERIA"
+    SUPPLIER_CONTRACT_PORTFOLIO = "SUPPLIER_CONTRACT_PORTFOLIO"
+    
     # Enhanced intelligence intents
     PORTFOLIO_RISK_ANALYSIS = "PORTFOLIO_RISK_ANALYSIS"
     GEOGRAPHIC_RISK_CLUSTERING = "GEOGRAPHIC_RISK_CLUSTERING"
@@ -199,6 +205,22 @@ class IntentClassifier:
             "UNIFIED_RISK_SEARCH": {
                 "name": "UNIFIED_RISK_SEARCH",
                 "description": "Comprehensive risk analysis across suppliers and contracts"
+            },
+            "SUPPLIERS_BY_CONTRACT_VALUE": {
+                "name": "SUPPLIERS_BY_CONTRACT_VALUE",
+                "description": "Find suppliers based on the value of contracts they have"
+            },
+            "SUPPLIERS_WITH_CONTRACT_CRITERIA": {
+                "name": "SUPPLIERS_WITH_CONTRACT_CRITERIA",
+                "description": "Find suppliers that meet specific contract criteria"
+            },
+            "CONTRACTS_BY_SUPPLIER_CRITERIA": {
+                "name": "CONTRACTS_BY_SUPPLIER_CRITERIA",
+                "description": "Find contracts that meet specific supplier criteria"
+            },
+            "SUPPLIER_CONTRACT_PORTFOLIO": {
+                "name": "SUPPLIER_CONTRACT_PORTFOLIO",
+                "description": "Get a portfolio of contracts for a specific supplier"
             }
         }
     
