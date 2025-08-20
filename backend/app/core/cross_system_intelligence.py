@@ -380,7 +380,9 @@ class CrossSystemIntelligenceService:
         
         for supplier in suppliers:
             weight = supplier_contract_values[supplier.id] or 1.0  # Minimum weight of 1
-            portfolio_risk_score += supplier.risk_score * weight
+            # Normalize risk score from 0-100 to 0-10 scale
+            normalized_risk_score = supplier.risk_score / 10.0
+            portfolio_risk_score += normalized_risk_score * weight
             total_weight += weight
         
         if total_weight > 0:
@@ -503,7 +505,9 @@ class CrossSystemIntelligenceService:
                 continue
             
             # Calculate cluster metrics
-            average_risk_score = sum(s.risk_score for s in suppliers_in_region) / len(suppliers_in_region)
+            # Normalize risk scores from 0-100 to 0-10 scale
+            normalized_risk_scores = [s.risk_score / 10.0 for s in suppliers_in_region]
+            average_risk_score = sum(normalized_risk_scores) / len(normalized_risk_scores)
             
             # Get regional risk factors from external data
             regional_risk_data = self.geographic_risk_data.get(region, {})
@@ -592,7 +596,9 @@ class CrossSystemIntelligenceService:
                 continue
             
             # Calculate cluster metrics
-            average_risk_score = sum(s.risk_score for s in suppliers_in_industry) / len(suppliers_in_industry)
+            # Normalize risk scores from 0-100 to 0-10 scale
+            normalized_risk_scores = [s.risk_score / 10.0 for s in suppliers_in_industry]
+            average_risk_score = sum(normalized_risk_scores) / len(normalized_risk_scores)
             
             # Get industry risk data
             industry_risk_data = self.industry_risk_data.get(industry, {})
@@ -1128,15 +1134,27 @@ class CrossSystemIntelligenceService:
     
     async def _get_supplier_total_contract_value(self, db: Session, supplier_name: str) -> Optional[float]:
         """Get total contract value for a supplier."""
-        total = db.query(
-            func.coalesce(func.sum(
-                func.cast(Document.extracted_metadata.op('->>')('total_value'), func.numeric())
-            ), 0)
-        ).filter(
-            Document.extracted_metadata.op('->>')('supplier_name') == supplier_name
-        ).scalar()
-        
-        return float(total) if total else None
+        try:
+            # Use a simpler approach to avoid SQLAlchemy type issues
+            contracts = db.query(Document).filter(
+                Document.extracted_metadata.op('->>')('supplier_name') == supplier_name
+            ).all()
+            
+            total_value = 0.0
+            for contract in contracts:
+                metadata = contract.extracted_metadata or {}
+                contract_value = metadata.get('total_value')
+                if contract_value:
+                    try:
+                        total_value += float(contract_value)
+                    except (ValueError, TypeError):
+                        continue
+            
+            return total_value if total_value > 0 else None
+            
+        except Exception as e:
+            logger.warning(f"Failed to get contract value for supplier {supplier_name}: {str(e)}")
+            return None
     
     async def _analyze_portfolio_risk_trends(
         self, 

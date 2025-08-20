@@ -19,3 +19,4 @@ export {
   type QuickAction,
   type QuickActionsProps 
 } from './QuickActions';
+export { default as AdvancedSearchInterface, type AdvancedSearchFilters } from './AdvancedSearchInterface';

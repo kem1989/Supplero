@@ -13,14 +13,14 @@ from enum import Enum
 
 class IntelligenceQueryTypeSchema(str, Enum):
     """Available intelligence query types."""
-    PORTFOLIO_RISK_ANALYSIS = "PORTFOLIO_RISK_ANALYSIS"
-    GEOGRAPHIC_RISK_CLUSTERING = "GEOGRAPHIC_RISK_CLUSTERING"
-    INDUSTRY_RISK_CLUSTERING = "INDUSTRY_RISK_CLUSTERING"
-    CONTRACT_IMPACT_ASSESSMENT = "CONTRACT_IMPACT_ASSESSMENT"
-    SUPPLIER_TREND_ANALYSIS = "SUPPLIER_TREND_ANALYSIS"
-    PREDICTIVE_RISK_MODELING = "PREDICTIVE_RISK_MODELING"
-    CROSS_SYSTEM_CORRELATION = "CROSS_SYSTEM_CORRELATION"
-    INTELLIGENT_RECOMMENDATIONS = "INTELLIGENT_RECOMMENDATIONS"
+    PORTFOLIO_RISK_ANALYSIS = "portfolio_risk_analysis"
+    GEOGRAPHIC_RISK_CLUSTERING = "geographic_risk_clustering"
+    INDUSTRY_RISK_CLUSTERING = "industry_risk_clustering"
+    CONTRACT_IMPACT_ASSESSMENT = "contract_impact_assessment"
+    SUPPLIER_TREND_ANALYSIS = "supplier_trend_analysis"
+    PREDICTIVE_RISK_MODELING = "predictive_risk_modeling"
+    CROSS_SYSTEM_CORRELATION = "cross_system_correlation"
+    INTELLIGENT_RECOMMENDATIONS = "intelligent_recommendations"
 
 
 class IntelligenceRequestSchema(BaseModel):

@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { api } from '../lib/auth';
-import { SupplierCard, type SupplierCardData } from './suppliers';
+import { SupplierCard, type SupplierCardData, AdvancedSearchInterface, type AdvancedSearchFilters } from './suppliers';
 
 interface SupplierSearchResult {
   id: number;
@@ -87,6 +87,104 @@ export default function SupplierDiscovery() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedExample, setSelectedExample] = useState<string>('');
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedSearchFilters>({});
+  const [useAdvancedSearch, setUseAdvancedSearch] = useState(false);
+
+  const handleAdvancedSearch = async (filters: AdvancedSearchFilters) => {
+    setLoading(true);
+    setError(null);
+    setResults(null);
+    setAdvancedFilters(filters);
+
+    try {
+      // Build query string from filters
+      const filterQuery = buildFilterQuery(filters);
+      
+      // Use the unified AI assistant endpoint with advanced filters
+      const response = await api.post('/ai-assistant/execute', {
+        query: filterQuery,
+        context: 'supplier_search',
+        parameters: {
+          filters: filters,
+          search_type: 'advanced'
+        }
+      });
+      
+      const data = response.data;
+      const executionResult = data.execution_result || data;
+      
+      // Handle different supplier response types: direct search, search_results, and risk_analyses
+      if (executionResult.suppliers || executionResult.search_results?.suppliers || executionResult.risk_analyses) {
+        const searchResults = executionResult.search_results || executionResult;
+        
+        // Extract suppliers from various response formats
+        let suppliers = searchResults.suppliers || [];
+        
+        // If we have risk_analyses, extract supplier info from them
+        if (executionResult.risk_analyses && !suppliers.length) {
+          suppliers = executionResult.risk_analyses.map((analysis: any) => ({
+            id: analysis.supplier_id || analysis.id,
+            name: analysis.supplier_name || analysis.name,
+            industry: analysis.industry,
+            country: analysis.country,
+            risk_score: analysis.risk_score || 0,
+            risk_level: analysis.risk_level || 'UNKNOWN',
+            is_active: true,
+            is_watchlisted: analysis.is_watchlisted || false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+        }
+        
+        const transformedResult: SearchResponse = {
+          suppliers: suppliers,
+          total_count: searchResults.total_count || searchResults.total_found || executionResult.analysis_summary?.total_suppliers || suppliers.length,
+          search_time_ms: searchResults.search_time_ms || data.execution_time_ms || 0,
+          performance_met: searchResults.performance_met ?? true,
+          search_strategy: searchResults.search_strategy,
+          search_method: searchResults.search_method,
+          fallback_reason: searchResults.fallback_reason,
+          statistics: searchResults.statistics,
+          ai_insights: searchResults.search_insights || {
+            summary: `Found ${suppliers.length} suppliers matching your advanced search criteria.`,
+            total_suppliers: suppliers.length,
+            high_risk_count: suppliers.filter(s => s.risk_level === 'HIGH' || s.risk_level === 'CRITICAL').length,
+            watchlisted_count: suppliers.filter(s => s.is_watchlisted).length,
+            top_industries: [...new Set(suppliers.map(s => s.industry).filter(Boolean))].slice(0, 3)
+          },
+          query_processing: searchResults.query_processing || {
+            intent: 'advanced_supplier_search',
+            confidence: 1.0,
+            confidence_threshold_met: true
+          }
+        };
+        
+        setResults(transformedResult);
+      } else {
+        setError('This query doesn\'t appear to be related to supplier search. Please try a supplier-focused query.');
+      }
+    } catch (err: any) {
+      console.error('Advanced search error:', err);
+      const errorMessage = err?.response?.data?.detail || err.message || 'Advanced search failed. Please try again.';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const buildFilterQuery = (filters: AdvancedSearchFilters): string => {
+    const parts: string[] = [];
+    
+    if (filters.name) parts.push(`name: ${filters.name}`);
+    if (filters.industry) parts.push(`industry: ${filters.industry}`);
+    if (filters.country) parts.push(`country: ${filters.country}`);
+    if (filters.risk_level) parts.push(`risk level: ${filters.risk_level}`);
+    if (filters.company_size) parts.push(`company size: ${filters.company_size}`);
+    if (filters.is_watchlisted) parts.push('watchlisted suppliers');
+    if (filters.has_contracts) parts.push('suppliers with contracts');
+    
+    return parts.length > 0 ? parts.join(', ') : 'all suppliers';
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -212,6 +310,19 @@ export default function SupplierDiscovery() {
     }
   };
 
+  const handleClear = () => {
+    setQuery('');
+    setResults(null);
+    setError(null);
+    setSelectedExample('');
+  };
+
+  const handleAdvancedClear = () => {
+    setAdvancedFilters({});
+    setResults(null);
+    setError(null);
+  };
+
 
 
   return (
@@ -259,23 +370,50 @@ export default function SupplierDiscovery() {
 
           {/* Search Interface */}
           <div className="glass rounded-2xl p-6 border border-white/10 mb-6">
-            <div className="space-y-4">
-              {/* Search Input */}
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <input
-                  type="text"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyPress={handleKeyPress}
-                  placeholder="Ask anything about your suppliers... e.g., 'Find high-risk suppliers in China with recent assessments'"
-                  className="w-full pl-10 pr-4 py-3 bg-slate-800/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                />
+            {/* Search Type Toggle */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-4">
+                <button
+                  onClick={() => setUseAdvancedSearch(false)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    !useAdvancedSearch
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  Natural Language Search
+                </button>
+                <button
+                  onClick={() => setUseAdvancedSearch(true)}
+                  className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                    useAdvancedSearch
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+                  }`}
+                >
+                  Advanced Search
+                </button>
               </div>
+            </div>
+
+            {!useAdvancedSearch ? (
+              <div className="space-y-4">
+                {/* Natural Language Search Input */}
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyPress={handleKeyPress}
+                    placeholder="Ask anything about your suppliers... e.g., 'Find high-risk suppliers in China with recent assessments'"
+                    className="w-full pl-10 pr-4 py-3 bg-slate-800/50 border border-slate-600/50 rounded-lg text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
 
               {/* Search Button */}
               <div className="flex justify-between items-center">
@@ -312,26 +450,35 @@ export default function SupplierDiscovery() {
                 )}
               </div>
             </div>
+            ) : (
+              <AdvancedSearchInterface
+                onSearch={handleAdvancedSearch}
+                onClear={handleAdvancedClear}
+                loading={loading}
+              />
+            )}
 
-            {/* Example Queries */}
-            <div className="mt-6 pt-6 border-t border-slate-600/30">
-              <h3 className="text-sm font-medium text-slate-300 mb-3">Try these examples:</h3>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-                {EXAMPLE_QUERIES.map((example, index) => (
-                  <button
-                    key={index}
-                    onClick={() => handleExampleClick(example)}
-                    className={`text-left p-2 rounded-lg text-xs transition-colors ${
-                      selectedExample === example
-                        ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
-                        : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-300 border border-transparent'
-                    }`}
-                  >
-                    "{example}"
-                  </button>
-                ))}
+            {/* Example Queries - Only show for natural language search */}
+            {!useAdvancedSearch && (
+              <div className="mt-6 pt-6 border-t border-slate-600/30">
+                <h3 className="text-sm font-medium text-slate-300 mb-3">Try these examples:</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
+                  {EXAMPLE_QUERIES.map((example, index) => (
+                    <button
+                      key={index}
+                      onClick={() => handleExampleClick(example)}
+                      className={`text-left p-2 rounded-lg text-xs transition-colors ${
+                        selectedExample === example
+                          ? 'bg-blue-600/20 text-blue-300 border border-blue-500/30'
+                          : 'bg-slate-800/50 text-slate-400 hover:bg-slate-700/50 hover:text-slate-300 border border-transparent'
+                      }`}
+                    >
+                      "{example}"
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Error Display */}
