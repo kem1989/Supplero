@@ -31,6 +31,7 @@ class CrossSystemQueryType(str, Enum):
     SUPPLIERS_WITH_CONTRACT_GAPS = "suppliers_with_contract_gaps"
     CONTRACTS_BY_SUPPLIER_RISK = "contracts_by_supplier_risk"
     UNIFIED_RISK_SEARCH = "unified_risk_search"
+    SUPPLIERS_BY_SEMANTIC_CONTRACTS = "suppliers_by_semantic_contracts"
 
 
 @dataclass
@@ -184,6 +185,8 @@ class CrossSystemSearchService:
                 response = await self._search_contracts_by_supplier_risk(request, db, organization_id)
             elif request.query_type == CrossSystemQueryType.UNIFIED_RISK_SEARCH:
                 response = await self._unified_risk_search(request, db, organization_id)
+            elif request.query_type == CrossSystemQueryType.SUPPLIERS_BY_SEMANTIC_CONTRACTS:
+                response = await self._search_suppliers_by_semantic_contracts(request, db, organization_id)
             else:
                 raise ValueError(f"Unsupported query type: {request.query_type}")
             
@@ -221,6 +224,127 @@ class CrossSystemSearchService:
         Alias for execute_cross_system_search to maintain compatibility.
         """
         return await self.execute_cross_system_search(request, db, organization_id)
+
+    async def _search_suppliers_by_semantic_contracts(
+        self,
+        request: CrossSystemSearchRequest,
+        db: Session,
+        organization_id: int
+    ) -> CrossSystemSearchResponse:
+        """Search suppliers based on semantic contract analysis."""
+        from app.core.semantic_contract_search import SemanticContractSearchService
+        from app.models.supplier import Supplier
+        from app.models.document import Document
+
+        start_matches_time = datetime.utcnow()
+
+        semantic_service = SemanticContractSearchService()
+        semantic_matches = await semantic_service.search_contracts_semantically(
+            query_text=request.query_text or "",
+            db=db,
+            organization_id=organization_id,
+            max_results=100,
+        )
+
+        supplier_groups: dict = {}
+        contract_results: List[ContractSupplierInfo] = []
+
+        for m in semantic_matches:
+            supplier_obj = None
+            supplier_key = None
+            if m.supplier_id:
+                supplier_obj = db.query(Supplier).filter(
+                    Supplier.organization_id == organization_id,
+                    Supplier.id == int(m.supplier_id)
+                ).first()
+            elif m.supplier_name:
+                supplier_obj = db.query(Supplier).filter(
+                    Supplier.organization_id == organization_id,
+                    Supplier.name.ilike(m.supplier_name)
+                ).first()
+
+            if supplier_obj:
+                supplier_key = str(supplier_obj.id)
+            else:
+                continue
+
+            if supplier_key not in supplier_groups:
+                supplier_groups[supplier_key] = {
+                    "supplier": supplier_obj,
+                    "matches": [],
+                    "best_score": 0.0,
+                }
+
+            group = supplier_groups[supplier_key]
+            group["matches"].append(m)
+            group["best_score"] = max(group["best_score"], m.relevance_score)
+
+            contract_results.append(
+                ContractSupplierInfo(
+                    document_id=int(m.document_id),
+                    document_title=m.document_filename or f"Contract {m.document_id}",
+                    contract_value=None,
+                    contract_start_date=None,
+                    contract_end_date=None,
+                    contract_status="unknown",
+                    clause_risk_level=None,
+                    supplier_id=supplier_obj.id if supplier_obj else None,
+                    supplier_name=supplier_obj.name if supplier_obj else m.supplier_name,
+                    supplier_risk_score=getattr(supplier_obj, "risk_score", None),
+                    supplier_risk_level=getattr(supplier_obj, "risk_level", None),
+                    combined_risk_score=getattr(supplier_obj, "risk_score", 0.0) or 0.0,
+                    risk_explanation="Semantic match to query",
+                    last_updated=datetime.utcnow(),
+                )
+            )
+
+        # Build supplier results
+        supplier_results: List[SupplierContractInfo] = []
+        for key, data in supplier_groups.items():
+            supplier = data["supplier"]
+            matches = data["matches"]
+            supplier_results.append(
+                SupplierContractInfo(
+                    supplier_id=supplier.id,
+                    supplier_name=supplier.name,
+                    supplier_risk_score=supplier.risk_score,
+                    supplier_risk_level=supplier.risk_level,
+                    supplier_industry=supplier.industry,
+                    supplier_country=supplier.country,
+                    contract_count=len(matches),
+                    total_contract_value=None,
+                    highest_risk_contract_id=None,
+                    highest_risk_contract_risk=None,
+                    expiring_contracts_count=0,
+                    recent_contracts_count=len(matches),
+                    combined_risk_score=supplier.risk_score,
+                    risk_factors=["Semantic match to query"],
+                    last_assessment_date=supplier.last_risk_assessment,
+                    created_at=supplier.created_at,
+                )
+            )
+
+        insights = [
+            f"Found {len(supplier_results)} suppliers matching '{request.query_text}' via semantic search",
+        ]
+
+        response = CrossSystemSearchResponse(
+            query_type=request.query_type,
+            supplier_results=supplier_results,
+            contract_results=contract_results,
+            total_suppliers=len(supplier_results),
+            total_contracts=len(contract_results),
+            high_risk_count=len([s for s in supplier_results if s.supplier_risk_level in ["HIGH", "CRITICAL"]]),
+            expiring_soon_count=0,
+            search_time_ms=(datetime.utcnow() - start_matches_time).total_seconds() * 1000.0,
+            page=request.page,
+            page_size=request.page_size,
+            total_pages=1,
+            key_insights=insights,
+            recommended_actions=["Review top relevance matches first"],
+        )
+
+        return response
     
     async def _search_suppliers_with_risky_contracts(
         self,

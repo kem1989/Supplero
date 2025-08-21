@@ -42,7 +42,8 @@ from .handlers.cross_system_handlers import (
     execute_unified_risk_search,
     execute_suppliers_by_contract_value,
     execute_suppliers_with_contract_criteria,
-    execute_supplier_contract_portfolio
+    execute_supplier_contract_portfolio,
+    execute_suppliers_by_semantic_contracts
 )
 
 logger = structlog.get_logger(__name__)
@@ -77,6 +78,7 @@ class AIAssistantService:
             IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES: execute_suppliers_by_contract_clauses,
             IntentType.CONTRACTS_BY_SUPPLIER_RISK: execute_contracts_by_supplier_risk,
             IntentType.UNIFIED_RISK_SEARCH: execute_unified_risk_search,
+            IntentType.SUPPLIERS_BY_SEMANTIC_CONTRACTS: execute_suppliers_by_semantic_contracts,
             
             # NEW: Enhanced supplier-contract relationship handlers
             IntentType.SUPPLIERS_BY_CONTRACT_VALUE: execute_suppliers_by_contract_value,

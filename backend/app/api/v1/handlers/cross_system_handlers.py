@@ -14,6 +14,165 @@ from .base_handler import BaseHandler
 logger = structlog.get_logger(__name__)
 
 
+async def execute_suppliers_by_semantic_contracts(
+    parameters: Dict[str, Any],
+    db: Session,
+    current_user: User
+) -> Dict[str, Any]:
+    """Execute semantic contract search and group results by supplier."""
+    try:
+        BaseHandler.log_execution_start(
+            "suppliers_by_semantic_contracts",
+            parameters,
+            current_user.id,
+            current_user.organization_id
+        )
+
+        # Extract original query text
+        query_text = parameters.get("query") or parameters.get("query_text") or ""
+        if not query_text:
+            return BaseHandler.create_error_response(
+                message="No query text provided for semantic search",
+                parameters=parameters,
+                error="missing query"
+            )
+
+        # Call shared semantic contract search service
+        from app.core.semantic_contract_search import SemanticContractSearchService
+        from app.models.supplier import Supplier
+
+        semantic_service = SemanticContractSearchService()
+        matches = await semantic_service.search_contracts_semantically(
+            query_text=query_text,
+            db=db,
+            organization_id=current_user.organization_id,
+            max_results=100,
+        )
+
+        # Group by supplier (prefer supplier_id, then fuzzy by supplier_name)
+        supplier_groups: Dict[str, Dict[str, Any]] = {}
+        unlinked: list = []
+
+        for m in matches:
+            key = None
+            supplier = None
+            if m.supplier_id:
+                supplier = db.query(Supplier).filter(
+                    Supplier.organization_id == current_user.organization_id,
+                    Supplier.id == int(m.supplier_id)
+                ).first()
+                if supplier:
+                    key = str(supplier.id)
+            if not key and m.supplier_name:
+                # Try case-insensitive equality
+                supplier = db.query(Supplier).filter(
+                    Supplier.organization_id == current_user.organization_id,
+                    Supplier.name.ilike(m.supplier_name)
+                ).first()
+                # Try contains if equality not found
+                if not supplier:
+                    supplier = db.query(Supplier).filter(
+                        Supplier.organization_id == current_user.organization_id,
+                        Supplier.name.ilike(f"%{m.supplier_name}%")
+                    ).first()
+                if supplier:
+                    key = str(supplier.id)
+            if not key:
+                unlinked.append(m)
+
+            if key is None:
+                continue
+
+            if key not in supplier_groups:
+                supplier_groups[key] = {
+                    "matches": [],
+                    "best_score": 0.0,
+                }
+            group = supplier_groups[key]
+            group["matches"].append(m)
+            group["best_score"] = max(group["best_score"], m.relevance_score)
+
+        # Build suppliers array
+        suppliers_payload = []
+        contracts_payload = []
+
+        for supplier_id, group in supplier_groups.items():
+            supplier = db.query(Supplier).filter(
+                Supplier.organization_id == current_user.organization_id,
+                Supplier.id == int(supplier_id)
+            ).first()
+
+            if not supplier:
+                continue
+
+            contract_insights = []
+            for m in sorted(group["matches"], key=lambda x: x.relevance_score, reverse=True)[:5]:
+                contracts_payload.append({
+                    "id": m.document_id,
+                    "filename": m.document_filename or f"Contract {m.document_id}",
+                    "supplier_name": supplier.name,
+                    "relevance_score": m.relevance_score,
+                    "key_excerpts": m.key_excerpts,
+                    "match_reasons": m.match_reasons,
+                    "extracted_values": m.extracted_values or {},
+                })
+                contract_insights.append({
+                    "document_id": m.document_id,
+                    "filename": m.document_filename or f"Contract {m.document_id}",
+                    "relevance_score": m.relevance_score,
+                    "key_excerpts": m.key_excerpts,
+                    "match_reasons": m.match_reasons,
+                    "extracted_values": m.extracted_values or {},
+                })
+
+            suppliers_payload.append({
+                "id": supplier.id,
+                "name": supplier.name,
+                "email": getattr(supplier, "email", None),
+                "phone": getattr(supplier, "phone", None),
+                "address": getattr(supplier, "address", None),
+                "contract_insights": {
+                    "matching_contracts": contract_insights,
+                    "total_contracts": len(group["matches"]),
+                    "confidence_score": group["best_score"],
+                },
+            })
+
+        return BaseHandler.create_success_response(
+            message=f"Found {len(suppliers_payload)} suppliers with matching contracts",
+            parameters=parameters,
+            data={
+                "search_results": {
+                    "suppliers": suppliers_payload,
+                    "contracts": contracts_payload,
+                },
+                "statistics": {
+                    "total_suppliers": len(suppliers_payload),
+                    "total_contracts": len(contracts_payload),
+                    "search_method": "semantic_rag",
+                },
+                "key_insights": [
+                    f"Unlinked matches: {len(unlinked)}" if unlinked else ""
+                ],
+                "recommended_actions": [],
+                "query_processing": {
+                    "original_query": query_text,
+                    "extracted_parameters": parameters,
+                    "search_method": "semantic_rag",
+                },
+            },
+        )
+
+    except Exception as e:
+        BaseHandler.log_execution_error("suppliers_by_semantic_contracts", e, parameters)
+        return BaseHandler.create_error_response(
+            message="Semantic suppliers search failed",
+            parameters=parameters,
+            error=str(e),
+            additional_fields={"search_results": {"suppliers": [], "contracts": []}}
+        )
+
+
 async def execute_suppliers_with_risky_contracts(
     parameters: Dict[str, Any],
     db: Session,
@@ -173,49 +332,64 @@ async def execute_suppliers_by_contract_clauses(
             current_user.organization_id
         )
         
-        # Create search request
-        search_request = CrossSystemSearchRequest(
-            query_type=CrossSystemQueryType.SUPPLIERS_BY_CONTRACT_CLAUSES,
-            clause_types=parameters.get("clause_types", []),
-            supplier_industries=parameters.get("supplier_industries"),
-            contract_value_min=parameters.get("contract_value_min"),
-            page=parameters.get("page", 1),
-            page_size=parameters.get("page_size", 20)
-        )
-        
+        clause_types = parameters.get("clause_types", [])
+
+        # If clause_types missing, fallback to semantic contracts path using the raw query
+        if not clause_types:
+            from app.core.cross_system_search import CrossSystemQueryType as CSQT
+            search_request = CrossSystemSearchRequest(
+                query_type=CSQT.SUPPLIERS_BY_SEMANTIC_CONTRACTS,
+                query_text=parameters.get("query"),
+                page=parameters.get("page", 1),
+                page_size=parameters.get("page_size", 20)
+            )
+        else:
+            # Structured clause path
+            search_request = CrossSystemSearchRequest(
+                query_type=CrossSystemQueryType.SUPPLIERS_BY_CONTRACT_CLAUSES,
+                clause_types=clause_types,
+                supplier_industries=parameters.get("supplier_industries"),
+                contract_value_min=parameters.get("contract_value_min"),
+                page=parameters.get("page", 1),
+                page_size=parameters.get("page_size", 20)
+            )
+
         # Execute search
         cross_search_service = CrossSystemSearchService()
         search_result = await cross_search_service.execute_cross_system_search(
             search_request, db, current_user.organization_id
         )
         
+        supplier_list = (getattr(search_result, 'supplier_results', None) or getattr(search_result, 'suppliers', []))
+        contract_list = (getattr(search_result, 'contract_results', None) or getattr(search_result, 'contracts', []))
+
         return BaseHandler.create_success_response(
-            message=f"Found {len(search_result.suppliers)} suppliers with specified contract clauses",
+            message=f"Found {len(supplier_list)} suppliers with specified contract clauses",
             parameters=parameters,
             data={
                 "search_results": {
                     "suppliers": [
                         {
-                            "id": s.id, 
-                            "name": s.name,
-                            "industry": s.industry,
-                            "risk_score": s.risk_score,
-                            "matching_contracts": len([c for c in search_result.contracts if getattr(c, 'supplier_name', '') == s.name])
-                        } for s in search_result.suppliers
+                            "id": getattr(s, 'supplier_id', getattr(s, 'id', None)), 
+                            "name": getattr(s, 'supplier_name', getattr(s, 'name', '')),
+                            "industry": getattr(s, 'supplier_industry', getattr(s, 'industry', None)),
+                            "risk_score": getattr(s, 'supplier_risk_score', getattr(s, 'risk_score', 0)),
+                            "matching_contracts": getattr(s, 'contract_count', 0)
+                        } for s in (getattr(search_result, 'supplier_results', None) or getattr(search_result, 'suppliers', []))
                     ],
                     "contracts": [
                         {
-                            "id": c.id, 
+                            "id": getattr(c, 'document_id', getattr(c, 'id', None)), 
                             "supplier_name": getattr(c, 'supplier_name', ''),
                             "matching_clauses": getattr(c, 'matching_clauses', []),
-                            "filename": getattr(c, 'filename', '')
-                        } for c in search_result.contracts
+                            "filename": getattr(c, 'document_title', getattr(c, 'filename', ''))
+                        } for c in (getattr(search_result, 'contract_results', None) or getattr(search_result, 'contracts', []))
                     ]
                 },
                 "clause_analysis": {
                     "requested_clauses": parameters.get("clause_types", []),
-                    "total_matches": len(search_result.contracts),
-                    "suppliers_with_clauses": len(search_result.suppliers)
+                    "total_matches": len(contract_list),
+                    "suppliers_with_clauses": len(supplier_list)
                 }
             }
         )
@@ -421,31 +595,33 @@ async def execute_suppliers_by_contract_value(
         search_service = CrossSystemSearchService()
         search_result = await search_service.execute_search(search_request, db, current_user.organization_id)
         
+        supplier_list = search_result.supplier_results or []
+
         return BaseHandler.create_success_response(
-            message=f"Found {len(search_result.suppliers)} suppliers with contracts matching value criteria",
+            message=f"Found {len(supplier_list)} suppliers with contracts matching value criteria",
             parameters=parameters,
             data={
                 "search_results": {
                     "suppliers": [
                         {
-                            "id": supplier.id,
-                            "name": supplier.name,
-                            "risk_score": supplier.risk_score,
-                            "risk_level": supplier.risk_level,
-                            "industry": supplier.industry,
-                            "country": supplier.country,
-                            "contract_count": supplier.contract_count,
-                            "total_contract_value": supplier.total_contract_value,
-                            "highest_contract_value": supplier.highest_contract_value if hasattr(supplier, 'highest_contract_value') else None
+                            "id": s.supplier_id,
+                            "name": s.supplier_name,
+                            "risk_score": s.supplier_risk_score,
+                            "risk_level": s.supplier_risk_level,
+                            "industry": s.supplier_industry,
+                            "country": s.supplier_country,
+                            "contract_count": s.contract_count,
+                            "total_contract_value": s.total_contract_value,
+                            "highest_contract_value": getattr(s, 'highest_contract_value', None)
                         }
-                        for supplier in search_result.suppliers[:20]
+                        for s in supplier_list[:20]
                     ]
                 },
                 "statistics": {
-                    "total_suppliers": len(search_result.suppliers),
-                    "total_contracts": sum(s.contract_count for s in search_result.suppliers),
-                    "total_contract_value": sum(s.total_contract_value or 0 for s in search_result.suppliers),
-                    "average_contract_value": sum(s.total_contract_value or 0 for s in search_result.suppliers) / len(search_result.suppliers) if search_result.suppliers else 0
+                    "total_suppliers": len(supplier_list),
+                    "total_contracts": sum(s.contract_count for s in supplier_list),
+                    "total_contract_value": sum(s.total_contract_value or 0 for s in supplier_list),
+                    "average_contract_value": (sum(s.total_contract_value or 0 for s in supplier_list) / len(supplier_list)) if supplier_list else 0
                 },
                 "contract_value_criteria": {
                     "min_value": contract_value_min,

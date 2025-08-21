@@ -63,7 +63,8 @@ class ResponseFormatter:
             IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS,
             IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES,
             IntentType.CONTRACTS_BY_SUPPLIER_RISK,
-            IntentType.UNIFIED_RISK_SEARCH
+            IntentType.UNIFIED_RISK_SEARCH,
+            IntentType.SUPPLIERS_BY_SEMANTIC_CONTRACTS
         ]:
             return ResponseFormatter._format_cross_system_response(base_response, intent)
         

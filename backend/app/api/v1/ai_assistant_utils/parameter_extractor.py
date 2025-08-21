@@ -129,7 +129,7 @@ For supplier-related queries, extract these parameters when mentioned:
 Return only the parameters that are explicitly mentioned in the query.
 """
         
-        elif intent in [IntentType.SUPPLIERS_WITH_RISKY_CONTRACTS, IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS, IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES, IntentType.CONTRACTS_BY_SUPPLIER_RISK, IntentType.UNIFIED_RISK_SEARCH]:
+        elif intent in [IntentType.SUPPLIERS_WITH_RISKY_CONTRACTS, IntentType.SUPPLIERS_WITH_EXPIRING_CONTRACTS, IntentType.SUPPLIERS_BY_CONTRACT_CLAUSES, IntentType.CONTRACTS_BY_SUPPLIER_RISK, IntentType.UNIFIED_RISK_SEARCH, IntentType.SUPPLIERS_BY_SEMANTIC_CONTRACTS]:
             return base_prompt + """
 For cross-system supplier-contract queries, extract these parameters when mentioned:
 - contract_risk_level: Contract risk level like "low", "medium", "high", "critical" (string)
@@ -140,6 +140,9 @@ For cross-system supplier-contract queries, extract these parameters when mentio
 - contract_value_max: Maximum contract value (number)
 - contract_expiring_days: Days until contract expires (number)
 - clause_types: List of clause types like "force_majeure", "termination" (array of strings)
+- termination_days_min: Minimum termination notice days threshold (number)
+- liability_cap_max_amount: Maximum liability cap amount in dollars (number)
+- payment_terms_days_min: Minimum payment terms days (number, e.g., Net 30 -> 30)
 - page: Page number for pagination (number)
 - page_size: Number of results per page (number)
 

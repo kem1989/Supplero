@@ -33,6 +33,19 @@ interface SupplierSearchResult {
   latest_contract_date?: string;
   match_reasons?: string[];
   key_highlights?: string[];
+  contract_insights?: {
+    matching_contracts: Array<{
+      document_id: string | number;
+      filename: string;
+      relevance_score?: number;
+      key_excerpts?: string[];
+      match_reasons?: string[];
+      clause_badges?: string[];
+      extracted_values?: Record<string, any>;
+    }>;
+    total_contracts?: number;
+    confidence_score?: number;
+  };
 }
 
 interface SearchResponse {
@@ -235,6 +248,13 @@ export default function SupplierDiscovery() {
             company_size: analysis.risk_factors?.size_risk?.company_size || null,
             contact_email: null,
             last_risk_assessment: analysis.last_assessment
+          }));
+        }
+        // Preserve semantic contract insights if present
+        if (Array.isArray(suppliers)) {
+          suppliers = suppliers.map((s: any) => ({
+            ...s,
+            contract_insights: s.contract_insights || undefined,
           }));
         }
         
@@ -570,16 +590,53 @@ export default function SupplierDiscovery() {
               ) : (
                 <div className="space-y-4">
                   {results.suppliers.map((supplier) => (
-                    <SupplierCard
-                      key={supplier.id}
-                      supplier={supplier as SupplierCardData}
-                      variant="default"
-                      showMetrics={true}
-                      showActions={true}
-                      onViewDetails={handleViewDetails}
-                      onAnalyzeRisk={handleAnalyzeRisk}
-                      onToggleWatchlist={handleToggleWatchlist}
-                    />
+                    <div key={supplier.id} className="space-y-2">
+                      <SupplierCard
+                        supplier={supplier as SupplierCardData}
+                        variant="default"
+                        showMetrics={true}
+                        showActions={true}
+                        onViewDetails={handleViewDetails}
+                        onAnalyzeRisk={handleAnalyzeRisk}
+                        onToggleWatchlist={handleToggleWatchlist}
+                      />
+                      {supplier.contract_insights?.matching_contracts?.length ? (
+                        <div className="ml-4 p-3 bg-slate-800/40 rounded-lg border border-slate-600/30">
+                          <div className="text-xs text-slate-400 mb-2">
+                            Matching Contracts ({supplier.contract_insights.total_contracts})
+                            {supplier.contract_insights.confidence_score ? (
+                              <span className="ml-2 text-blue-400">Top score: {Math.round((supplier.contract_insights.confidence_score || 0) * 100)}%</span>
+                            ) : null}
+                          </div>
+                          <div className="space-y-3">
+                            {supplier.contract_insights.matching_contracts.slice(0, 3).map((c: any, idx: number) => (
+                              <div key={`${c.document_id}-${idx}`} className="text-xs text-slate-300">
+                                <div className="flex items-center justify-between">
+                                  <div className="font-semibold text-slate-200">{c.filename}</div>
+                                  {typeof c.relevance_score === 'number' && (
+                                    <div className="text-blue-400">{Math.round(c.relevance_score * 100)}%</div>
+                                  )}
+                                </div>
+                                {c.clause_badges?.length ? (
+                                  <div className="mt-1 flex flex-wrap gap-1">
+                                    {c.clause_badges.slice(0, 4).map((b: string, i: number) => (
+                                      <span key={i} className="px-2 py-0.5 bg-slate-700/60 border border-slate-600/60 rounded-full text-[10px] text-slate-300">{b}</span>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {c.key_excerpts?.length ? (
+                                  <div className="mt-2 space-y-1">
+                                    {c.key_excerpts.slice(0, 2).map((ex: string, i: number) => (
+                                      <p key={i} className="italic text-slate-400">“{ex}”</p>
+                                    ))}
+                                  </div>
+                                ) : null}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
                   ))}
                 </div>
               )}

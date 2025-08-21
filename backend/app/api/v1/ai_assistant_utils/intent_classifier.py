@@ -35,6 +35,7 @@ class IntentType(str, Enum):
     SUPPLIERS_BY_CONTRACT_CLAUSES = "SUPPLIERS_BY_CONTRACT_CLAUSES"
     CONTRACTS_BY_SUPPLIER_RISK = "CONTRACTS_BY_SUPPLIER_RISK"
     UNIFIED_RISK_SEARCH = "UNIFIED_RISK_SEARCH"
+    SUPPLIERS_BY_SEMANTIC_CONTRACTS = "SUPPLIERS_BY_SEMANTIC_CONTRACTS"
     
     # NEW: Enhanced supplier-contract relationship intents
     SUPPLIERS_BY_CONTRACT_VALUE = "SUPPLIERS_BY_CONTRACT_VALUE"
@@ -206,6 +207,10 @@ class IntentClassifier:
                 "name": "UNIFIED_RISK_SEARCH",
                 "description": "Comprehensive risk analysis across suppliers and contracts"
             },
+            "SUPPLIERS_BY_SEMANTIC_CONTRACTS": {
+                "name": "SUPPLIERS_BY_SEMANTIC_CONTRACTS",
+                "description": "Find suppliers based on semantic analysis of contract content (RAG)"
+            },
             "SUPPLIERS_BY_CONTRACT_VALUE": {
                 "name": "SUPPLIERS_BY_CONTRACT_VALUE",
                 "description": "Find suppliers based on the value of contracts they have"
@@ -258,6 +263,7 @@ Key Classification Rules:
 11. **SUPPLIERS_BY_CONTRACT_CLAUSES**: Use when query asks for suppliers based on specific contract clause types
 12. **CONTRACTS_BY_SUPPLIER_RISK**: Use when query asks for contracts based on supplier risk levels
 13. **UNIFIED_RISK_SEARCH**: Use when query asks for comprehensive risk analysis across suppliers and contracts
+14. **SUPPLIERS_BY_SEMANTIC_CONTRACTS**: Use when a query references supplier context AND contract content concepts (clauses/terms) or thresholds (days, amounts, Net terms) that require semantic analysis across unstructured content (e.g., "Which vendors have termination clauses longer than 30 days?", "Find suppliers with liability caps under $1M", "Which contracts mention data security requirements?")
 
 Respond in this exact JSON format:
 {{
