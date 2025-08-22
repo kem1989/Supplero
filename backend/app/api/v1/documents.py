@@ -117,34 +117,36 @@ async def upload_document(
                 logger.error(f"Supplier linking failed for document {document.id}: {linking_error}")
                 # Don't fail the upload if supplier linking fails
             
-            # Update status to PROCESSED
-            document.status = DocumentStatus.PROCESSED
-            document.processing_completed_at = datetime.now()
-            document.processed_at = datetime.now()
-            db.commit()
-            
             # Extract clauses from the document using AI-powered analysis
             extracted_clauses = []
             try:
+                logger.info(f"Importing ClauseExtractionService for document {document.id}")
                 from app.core.clause_extraction import ClauseExtractionService
+                
+                logger.info(f"Creating ClauseExtractionService instance for document {document.id}")
                 clause_service = ClauseExtractionService()
                 
                 logger.info(f"Starting clause extraction for document {document.id}")
+                logger.info(f"Document text length: {len(document.extracted_text) if document.extracted_text else 0}")
                 
                 # Extract clauses using AI-powered analysis
-                extracted_clauses = await clause_service.extract_clauses_from_document(
+                extracted_clauses = await clause_service.extract_clauses(
                     document_text=document.extracted_text,
-                    document_id=str(document.id),
-                    organization_id=str(document.organization_id)
+                    document_id=str(document.id)
                 )
                 
                 logger.info(f"Clause extraction completed for document {document.id}: {len(extracted_clauses)} clauses found")
                 
                 # Store clauses in database (contract_clauses table)
+                logger.info(f"Storing {len(extracted_clauses)} clauses in database for document {document.id}")
                 await store_clauses_in_database(extracted_clauses, document.id, db)
+                logger.info(f"Successfully stored clauses in database for document {document.id}")
                 
             except Exception as clause_error:
-                logger.error(f"Clause extraction failed for document {document.id}: {clause_error}")
+                logger.error(f"Clause extraction failed for document {document.id}: {str(clause_error)}")
+                logger.error(f"Clause extraction error type: {type(clause_error).__name__}")
+                import traceback
+                logger.error(f"Clause extraction traceback: {traceback.format_exc()}")
                 # Don't fail the upload if clause extraction fails
                 extracted_clauses = []
             
@@ -161,7 +163,7 @@ async def upload_document(
                     "original_filename": document.original_filename,
                     "extracted_text": document.extracted_text,
                     "extracted_metadata": document.extracted_metadata,
-                    "extracted_clauses": [clause.to_dict() for clause in extracted_clauses],  # Add extracted clauses
+                    "extracted_clauses": extracted_clauses,  # Pure OpenAI returns dictionaries directly
                     "created_at": document.created_at.isoformat() if document.created_at else None,
                     "updated_at": document.updated_at.isoformat() if document.updated_at else None,
                     "tags": []
@@ -177,6 +179,12 @@ async def upload_document(
             except Exception as indexing_error:
                 logger.error(f"Elasticsearch indexing failed for document {document.id}: {indexing_error}")
                 # Don't fail the upload if indexing fails
+            
+            # Update status to PROCESSED AFTER clause extraction and indexing
+            document.status = DocumentStatus.PROCESSED
+            document.processing_completed_at = datetime.now()
+            document.processed_at = datetime.now()
+            db.commit()
             
             logger.info(f"Document {document.id} processed successfully")
             

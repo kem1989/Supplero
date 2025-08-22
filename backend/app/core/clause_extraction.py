@@ -31,9 +31,7 @@ class ClauseExtractionService:
         """Extract clauses using pure OpenAI AI analysis"""
         try:
             logger.info(
-                "Starting pure AI clause extraction",
-                document_id=document_id,
-                text_length=len(document_text)
+                f"Starting pure AI clause extraction for document {document_id}, text length: {len(document_text)}"
             )
             
             # Phase 1: Pure AI clause detection
@@ -43,18 +41,14 @@ class ClauseExtractionService:
             enriched_clauses = self._enrich_clause_metadata(ai_detected_clauses)
             
             logger.info(
-                "AI clause extraction completed",
-                document_id=document_id,
-                clauses_found=len(enriched_clauses)
+                f"AI clause extraction completed for document {document_id}: {len(enriched_clauses)} clauses found"
             )
             
             return enriched_clauses
             
         except Exception as e:
             logger.error(
-                "AI clause extraction failed",
-                document_id=document_id,
-                error=str(e)
+                f"AI clause extraction failed for document {document_id}: {str(e)}"
             )
             return []
     
@@ -117,8 +111,11 @@ class ClauseExtractionService:
             5. risk_level: low, medium, high, or critical (assess the business risk)
             6. reasoning: Why this clause was identified and its significance
             
-            IMPORTANT: Be thorough but accurate. Only identify actual contract clauses, not general text.
-            Return ONLY a JSON array of clauses found.
+            IMPORTANT: 
+            - Be thorough but accurate. Only identify actual contract clauses, not general text.
+            - Return ONLY a valid JSON array of clauses found.
+            - Do NOT include any explanatory text before or after the JSON.
+            - Ensure the JSON is properly formatted and valid.
             
             Example format:
             [
@@ -132,7 +129,9 @@ class ClauseExtractionService:
               }}
             ]
             
-            If no clauses found, return empty array [].
+            If no clauses found, return: []
+            
+            Remember: Return ONLY the JSON array, nothing else.
             """
             
             # Call OpenAI with higher token limit for comprehensive analysis
@@ -148,14 +147,22 @@ class ClauseExtractionService:
             
             # Parse AI response
             ai_response = response.choices[0].message.content.strip()
-            logger.info(f"AI clause analysis response received: {ai_response[:200]}...")
+            logger.info(f"AI clause analysis response received: {ai_response[:500]}...")
             
-            # Extract JSON from response
+            # Extract JSON from response - improved parsing logic
             try:
                 import re
-                json_match = re.search(r'\[.*\]', ai_response, re.DOTALL)
+                
+                # First, try to find JSON array with more flexible regex
+                # Look for content between [ and ] that might contain newlines
+                json_match = re.search(r'\[[\s\S]*\]', ai_response)
+                
                 if json_match:
-                    ai_clauses = json.loads(json_match.group())
+                    json_content = json_match.group()
+                    logger.info(f"Found JSON content: {json_content[:300]}...")
+                    
+                    # Try to parse the JSON
+                    ai_clauses = json.loads(json_content)
                     
                     # Convert AI results to our format
                     detected_clauses = []
@@ -177,11 +184,47 @@ class ClauseExtractionService:
                     logger.info(f"AI detected {len(detected_clauses)} clauses")
                     return detected_clauses
                 else:
-                    logger.warning("No valid JSON array found in AI response")
+                    # If no JSON array found, try to find any JSON-like content
+                    logger.warning("No JSON array found, trying alternative parsing...")
+                    
+                    # Look for any content that might be JSON
+                    if '{' in ai_response and '}' in ai_response:
+                        # Try to extract content between { and }
+                        json_objects = re.findall(r'\{[^{}]*\}', ai_response)
+                        if json_objects:
+                            logger.info(f"Found {len(json_objects)} potential JSON objects")
+                            # Convert single objects to array format
+                            detected_clauses = []
+                            for obj_str in json_objects:
+                                try:
+                                    obj = json.loads(obj_str)
+                                    detected_clauses.append({
+                                        "clause_type": obj.get("clause_type", "other"),
+                                        "clause_text": obj.get("clause_text", ""),
+                                        "extracted_text": obj.get("extracted_text", ""),
+                                        "confidence_score": obj.get("confidence_score", 0.8),
+                                        "risk_level": obj.get("risk_level", "medium"),
+                                        "metadata": {
+                                            "ai_enhanced": True,
+                                            "reasoning": obj.get("reasoning", ""),
+                                            "source": "openai_analysis",
+                                            "extraction_method": "pure_ai"
+                                        }
+                                    })
+                                except json.JSONDecodeError:
+                                    continue
+                            
+                            if detected_clauses:
+                                logger.info(f"Successfully parsed {len(detected_clauses)} clauses from individual objects")
+                                return detected_clauses
+                    
+                    logger.warning("No valid JSON content found in AI response")
+                    logger.warning(f"Full AI response: {ai_response}")
                     return []
                     
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse AI response as JSON: {e}")
+                logger.error(f"JSON content that failed: {json_match.group() if json_match else 'None'}")
                 return []
                 
         except Exception as e:
