@@ -39,6 +39,54 @@ class DocumentStatusResponse(BaseModel):
     metadata_count: int = 0
 
 
+class ContractClauseResponse(BaseModel):
+    """Response schema for extracted contract clauses"""
+    id: int
+    clause_type: str
+    clause_text: str
+    extracted_text: Optional[str] = None
+    risk_level: Optional[str] = None
+    confidence_score: Optional[int] = None
+    ai_analysis: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
+
+class DocumentDetailsResponse(BaseModel):
+    """Enhanced response schema for document details including clauses"""
+    document_id: int
+    filename: str
+    original_filename: str
+    status: DocumentStatus
+    document_type: DocumentType
+    document_format: DocumentFormat
+    file_size: int
+    mime_type: str
+    
+    # Processing information
+    upload_timestamp: datetime
+    processing_started_at: Optional[datetime] = None
+    processing_completed_at: Optional[datetime] = None
+    processed_at: Optional[datetime] = None
+    error_message: Optional[str] = None
+    
+    # Content extraction
+    extracted_text: Optional[str] = None
+    extracted_metadata: Optional[Dict[str, Any]] = None
+    confidence_score: Optional[int] = None
+    
+    # OCR details
+    ocr_required: bool = False
+    ocr_quality_score: Optional[int] = None
+    
+    # Extracted clauses
+    extracted_clauses: List[ContractClauseResponse] = []
+    clauses_count: int = 0
+    
+    # Supplier information
+    supplier_name: Optional[str] = None
+    supplier_linked: bool = False
+
+
 class ExtractedMetadata(BaseModel):
     """Schema for extracted document metadata"""
     dates: List[Dict[str, Any]] = Field(default=[], description="Extracted dates with context")

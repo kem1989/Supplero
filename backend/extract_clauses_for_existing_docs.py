@@ -85,12 +85,13 @@ async def extract_clauses_for_existing_documents():
         print(f"Documents processed: {len(documents)}")
         
         # Verify the results
-        clause_count = db.execute("SELECT COUNT(*) FROM contract_clauses").scalar()
+        from sqlalchemy import text
+        clause_count = db.execute(text("SELECT COUNT(*) FROM contract_clauses")).scalar()
         print(f"Total clauses in database: {clause_count}")
         
         # Check for early termination clauses specifically
         termination_clauses = db.execute(
-            "SELECT clause_type, clause_text FROM contract_clauses WHERE clause_type ILIKE '%termination%' OR clause_text ILIKE '%termination%'"
+            text("SELECT clause_type, clause_text FROM contract_clauses WHERE clause_type ILIKE '%termination%' OR clause_text ILIKE '%termination%'")
         ).fetchall()
         
         if termination_clauses:

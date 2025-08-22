@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { api } from '../lib/auth';
+import DocumentDetailsModal from './DocumentDetailsModal';
 
 interface Document {
   document_id: number;  // Backend returns document_id, not id
@@ -39,6 +40,8 @@ export default function DocumentList({
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deletingDocument, setDeletingDocument] = useState<number | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -141,6 +144,16 @@ export default function DocumentList({
     } catch (error) {
       console.error('Failed to retry processing:', error);
     }
+  };
+
+  const handleViewDetails = (document: Document) => {
+    setSelectedDocumentId(document.document_id);
+    setShowDetailsModal(true);
+  };
+
+  const closeDetailsModal = () => {
+    setShowDetailsModal(false);
+    setSelectedDocumentId(null);
   };
 
   if (loading) {
@@ -258,6 +271,21 @@ export default function DocumentList({
 
                   {/* Actions */}
                   <div className="flex items-center space-x-2">
+                    {/* View Details Button */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleViewDetails(document);
+                      }}
+                      className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors"
+                      title="View document details"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                      </svg>
+                    </button>
+
                     {document.status === 'failed' && (
                       <button
                         onClick={(e) => {
@@ -277,7 +305,7 @@ export default function DocumentList({
                       onClick={(e) => {
                         e.stopPropagation();
                         console.log('Delete button clicked for document:', document);
-                        console.log('Document ID:', document.id);
+                        console.log('Document ID:', document.document_id);
                         setSelectedDocument(document);
                         setShowDeleteModal(true);
                       }}
@@ -305,6 +333,15 @@ export default function DocumentList({
         </div>
       )}
 
+      {/* Document Details Modal */}
+      {selectedDocumentId && (
+        <DocumentDetailsModal
+          documentId={selectedDocumentId}
+          isOpen={showDetailsModal}
+          onClose={closeDetailsModal}
+        />
+      )}
+
       {/* Delete Confirmation Modal */}
       {showDeleteModal && selectedDocument && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -321,16 +358,11 @@ export default function DocumentList({
                 Cancel
               </button>
               <button
-                onClick={() => {
-                  console.log('Modal delete button clicked');
-                  console.log('Selected document:', selectedDocument);
-                  console.log('Document ID to delete:', selectedDocument.document_id);
-                  handleDelete(selectedDocument.document_id);
-                }}
+                onClick={() => handleDelete(selectedDocument.document_id)}
                 disabled={deletingDocument === selectedDocument.document_id}
                 className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors disabled:opacity-50"
               >
-                {deletingDocument === selectedDocument.id ? 'Deleting...' : 'Delete'}
+                {deletingDocument === selectedDocument.document_id ? 'Deleting...' : 'Delete'}
               </button>
             </div>
           </div>

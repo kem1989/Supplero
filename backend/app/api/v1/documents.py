@@ -1,7 +1,7 @@
 import os
 import io
 from datetime import datetime
-from typing import List, Optional, Any
+from typing import List, Optional, Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -25,7 +25,9 @@ from app.schemas.document import (
     ProcessingJobStatus,
     DocumentFeedbackRequest,
     DocumentFeedbackResponse,
-    DocumentIngestionStats
+    DocumentIngestionStats,
+    DocumentDetailsResponse,
+    ContractClauseResponse
 )
 
 logger = get_logger(__name__)
@@ -222,7 +224,7 @@ async def upload_document(
 
 
 async def store_clauses_in_database(
-    extracted_clauses: List,
+    extracted_clauses: List[Dict[str, Any]],
     document_id: int,
     db: Session
 ) -> bool:
@@ -238,12 +240,12 @@ async def store_clauses_in_database(
         for clause in extracted_clauses:
             clause_record = ContractClause(
                 contract_id=document_id,
-                clause_type=clause.clause_type.value,
-                clause_text=clause.clause_text,
-                extracted_text=clause.extracted_text,
-                risk_level=clause.risk_level,
-                confidence_score=clause.confidence_score,
-                ai_analysis=clause.metadata
+                clause_type=clause['clause_type'],  # Access as dictionary key
+                clause_text=clause['clause_text'],
+                extracted_text=clause['extracted_text'],
+                risk_level=clause['risk_level'],
+                confidence_score=clause['confidence_score'],
+                ai_analysis=clause.get('metadata', {})
             )
             db.add(clause_record)
         
@@ -300,6 +302,99 @@ async def get_document_status(
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Failed to retrieve document status")
+
+
+@router.get("/{document_id}/details", response_model=DocumentDetailsResponse)
+async def get_document_details(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get comprehensive document details including extracted clauses and metadata"""
+    
+    try:
+        # Get the document with all details
+        document = db.query(Document).filter(
+            and_(
+                Document.id == document_id,
+                Document.organization_id == current_user.organization_id
+            )
+        ).first()
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get extracted clauses for this document
+        from app.models.document import ContractClause
+        clauses = db.query(ContractClause).filter(
+            ContractClause.contract_id == document_id
+        ).all()
+        
+        # Convert clauses to response format
+        clause_responses = []
+        for clause in clauses:
+            clause_responses.append(ContractClauseResponse(
+                id=clause.id,
+                clause_type=clause.clause_type,
+                clause_text=clause.clause_text,
+                extracted_text=clause.extracted_text,
+                risk_level=clause.risk_level,
+                confidence_score=clause.confidence_score,
+                ai_analysis=clause.ai_analysis,
+                created_at=clause.created_at
+            ))
+        
+        # Extract supplier information from metadata
+        supplier_name = None
+        supplier_linked = False
+        if document.extracted_metadata:
+            supplier_name = document.extracted_metadata.get('supplier_name')
+            supplier_linked = bool(supplier_name)
+        
+        return DocumentDetailsResponse(
+            document_id=document.id,
+            filename=document.filename,
+            original_filename=document.original_filename,
+            status=document.status,
+            document_type=document.document_type,
+            document_format=document.document_format,
+            file_size=document.file_size,
+            mime_type=document.mime_type,
+            
+            # Processing information
+            upload_timestamp=document.created_at,
+            processing_started_at=document.processing_started_at,
+            processing_completed_at=document.processing_completed_at,
+            processed_at=document.processed_at,
+            error_message=document.error_message,
+            
+            # Content extraction
+            extracted_text=document.extracted_text,
+            extracted_metadata=document.extracted_metadata,
+            confidence_score=document.confidence_score,
+            
+            # OCR details
+            ocr_required=document.ocr_required == "true",
+            ocr_quality_score=document.ocr_quality_score,
+            
+            # Extracted clauses
+            extracted_clauses=clause_responses,
+            clauses_count=len(clause_responses),
+            
+            # Supplier information
+            supplier_name=supplier_name,
+            supplier_linked=supplier_linked
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to get document details",
+            document_id=document_id,
+            error=str(e)
+        )
+        raise HTTPException(status_code=500, detail="Failed to retrieve document details")
 
 
 @router.get("/", response_model=DocumentListResponse)

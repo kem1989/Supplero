@@ -7,6 +7,7 @@ import { api } from '../lib/auth';
 import DocumentUpload from '../components/DocumentUpload';
 import DocumentList from '../components/DocumentList';
 import ProcessingStatus from '../components/ProcessingStatus';
+import DocumentDetailsModal from '../components/DocumentDetailsModal';
 
 interface Document {
   document_id: number;  // Backend returns document_id, not id
@@ -31,6 +32,8 @@ export default function DocumentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [processingDocuments, setProcessingDocuments] = useState<Set<number>>(new Set());
   const [autoProcessingMessage, setAutoProcessingMessage] = useState<string | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
 
   useEffect(() => {
     fetchDocuments();
@@ -126,6 +129,16 @@ export default function DocumentsPage() {
     });
   };
 
+  const handleViewDocumentDetails = (documentId: number) => {
+    setSelectedDocumentId(documentId);
+    setShowDetailsModal(true);
+  };
+
+  const closeDetailsModal = () => {
+    setShowDetailsModal(false);
+    setSelectedDocumentId(null);
+  };
+
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
@@ -197,6 +210,7 @@ export default function DocumentsPage() {
             <DocumentUpload 
               onDocumentUploaded={handleDocumentUploaded}
               onStatusUpdate={handleDocumentStatusUpdate}
+              onViewDocumentDetails={handleViewDocumentDetails}
             />
           </div>
 
@@ -225,6 +239,15 @@ export default function DocumentsPage() {
               />
             )}
           </div>
+
+          {/* Document Details Modal */}
+          {selectedDocumentId && (
+            <DocumentDetailsModal
+              documentId={selectedDocumentId}
+              isOpen={showDetailsModal}
+              onClose={closeDetailsModal}
+            />
+          )}
         </div>
       </div>
     </ProtectedRoute>

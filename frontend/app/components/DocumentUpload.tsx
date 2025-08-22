@@ -7,17 +7,18 @@ import { api } from '../lib/auth';
 interface DocumentUploadProps {
   onDocumentUploaded: (document: any) => void;
   onStatusUpdate: (documentId: number, status: string) => void;
+  onViewDocumentDetails?: (documentId: number) => void;
 }
 
 interface UploadProgress {
   [key: string]: {
     progress: number;
     status: 'uploading' | 'processing' | 'completed' | 'error';
-    message: string;
+    message: string | React.ReactNode;
   };
 }
 
-export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: DocumentUploadProps) {
+export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate, onViewDocumentDetails }: DocumentUploadProps) {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress>({});
   const [isUploading, setIsUploading] = useState(false);
 
@@ -89,6 +90,45 @@ export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: D
         
         // Start polling for status updates
         pollDocumentStatus(document.document_id, fileId);
+
+        // Show success message with insights summary
+        setUploadProgress(prev => ({
+          ...prev,
+          [fileId]: {
+            ...prev[fileId],
+            progress: 100,
+            status: 'completed',
+            message: 'Upload successful! Click to view extracted insights.'
+          }
+        }));
+
+        // Show insights summary after a short delay
+        setTimeout(() => {
+          showInsightsSummary(document.document_id, fileId);
+        }, 1000);
+
+        // Add clickable link to view details
+        setTimeout(() => {
+          setUploadProgress(prev => ({
+            ...prev,
+            [fileId]: {
+              ...prev[fileId],
+              progress: 100,
+              status: 'completed',
+              message: (
+                <span>
+                  Document processed successfully!{' '}
+                  <button
+                    onClick={() => viewDocumentDetails(document.document_id)}
+                    className="text-blue-400 hover:text-blue-300 underline"
+                  >
+                    Click here to view extracted insights
+                  </button>
+                </span>
+              )
+            }
+          }));
+        }, 2000);
 
       } catch (error: any) {
         console.error('Upload failed:', error);
@@ -196,6 +236,76 @@ export default function DocumentUpload({ onDocumentUploaded, onStatusUpdate }: D
 
     // Start polling after a short delay
     setTimeout(poll, 2000);
+  };
+
+  const showInsightsSummary = async (documentId: number, fileId: string) => {
+    try {
+      // Fetch document details to get extracted clauses and metadata
+      const response = await api.get(`/documents/${documentId}?details=true`);
+      const documentDetails = response.data;
+      
+      let summaryText = 'Document processed successfully';
+      
+      // Add clause summary if available
+      if (documentDetails.clauses_count > 0) {
+        const clauseTypes = Array.from(new Set(documentDetails.extracted_clauses.map(c => c.clause_type)));
+        summaryText += ` • ${documentDetails.clauses_count} clauses extracted (${clauseTypes.slice(0, 3).join(', ')}${clauseTypes.length > 3 ? '...' : ''})`;
+      }
+      
+      // Add supplier information if available
+      if (documentDetails.supplier_name) {
+        summaryText += ` • Supplier: ${documentDetails.supplier_name}`;
+      }
+      
+      // Add metadata summary if available
+      if (documentDetails.extracted_metadata) {
+        const metadata = documentDetails.extracted_metadata;
+        if (metadata.total_value) {
+          summaryText += ` • Contract Value: $${metadata.total_value}`;
+        }
+        if (metadata.start_date && metadata.end_date) {
+          summaryText += ` • Term: ${metadata.start_date} to ${metadata.end_date}`;
+        }
+      }
+      
+      setUploadProgress(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 100,
+          status: 'completed',
+          message: summaryText
+        }
+      }));
+      
+    } catch (error) {
+      console.error('Failed to fetch document details:', error);
+      // Fallback to basic success message
+      setUploadProgress(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 100,
+          status: 'completed',
+          message: 'Document processed successfully! Click "View Details" to see extracted insights.'
+        }
+      }));
+    }
+  };
+
+  const viewDocumentDetails = async (documentId: number) => {
+    if (onViewDocumentDetails) {
+      onViewDocumentDetails(documentId);
+    } else {
+      try {
+        const response = await api.get(`/documents/${documentId}?details=true`);
+        const documentDetails = response.data;
+        onDocumentUploaded(documentDetails); // Notify parent component with full document details
+        onStatusUpdate(documentId, 'VIEWED'); // Update status to viewed
+      } catch (error) {
+        console.error('Failed to view document details:', error);
+      }
+    }
   };
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({

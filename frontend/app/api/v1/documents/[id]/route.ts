@@ -6,7 +6,13 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
-    const backendUrl = buildApiUrl(`/api/v1/documents/${params.id}`, true);
+    const url = new URL(request.url);
+    const searchParams = url.searchParams.toString();
+    
+    // Check if this is a request for details
+    const isDetailsRequest = searchParams.includes('details=true');
+    const endpoint = isDetailsRequest ? 'details' : '';
+    const backendUrl = buildApiUrl(`/api/v1/documents/${params.id}${endpoint ? `/${endpoint}` : ''}`, true);
     
     const response = await fetch(backendUrl, {
       method: 'GET',
