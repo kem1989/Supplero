@@ -217,7 +217,7 @@ async def execute_search_contracts(
         for contract in contracts:
             # Extract supplier name from metadata arrays
             supplier_name_result = "Unknown"
-            contract_value = 0
+            contract_value = None  # Use None to indicate no valid value found
             
             if contract.extracted_metadata:
                 # Extract supplier name from parties array or text context
@@ -238,34 +238,44 @@ async def execute_search_contracts(
                 
                 # Extract contract value from amounts array
                 amounts = contract.extracted_metadata.get('amounts', [])
-                for amount in amounts:
-                    value = amount.get('value', '')
-                    if '$18,000,000.00' in value or '18,000,000.00' in value:
-                        contract_value = 18000000.00
-                        break
-                    elif '$' in value and ',' in value:
-                        # Try to parse other monetary values
-                        try:
-                            clean_value = value.replace('$', '').replace(',', '').replace(' USD', '')
-                            contract_value = float(clean_value)
-                            if contract_value > 1000000:  # Only use large contract values
-                                break
-                        except:
-                            pass
             
-            # Apply contract value filtering
+            for amount in amounts:
+                value = amount.get('value', '')
+                if '$18,000,000.00' in value or '18,000,000.00' in value:
+                    contract_value = 18000000.00
+                    break
+                elif '$' in value and ',' in value:
+                    # Try to parse other monetary values
+                    try:
+                        clean_value = value.replace('$', '').replace(',', '').replace(' USD', '')
+                        parsed_value = float(clean_value)
+                        if parsed_value > 1000000:  # Only use large contract values
+                            contract_value = parsed_value
+                            break
+                    except (ValueError, TypeError):
+                        continue
+            
+            # Apply contract value filtering - only include contracts with valid values
             include_contract = True
-            if contract_value_min and contract_value < contract_value_min:
-                include_contract = False
-            if contract_value_max and contract_value > contract_value_max:
-                include_contract = False
+            
+            # If we have value-based filters, only include contracts with valid contract values
+            if contract_value_min or contract_value_max:
+                if contract_value is None:
+                    # Skip contracts without valid contract values when filtering by value
+                    include_contract = False
+                else:
+                    # Apply value range filtering
+                    if contract_value_min and contract_value < contract_value_min:
+                        include_contract = False
+                    if contract_value_max and contract_value > contract_value_max:
+                        include_contract = False
             
             if include_contract:
                 results.append({
                     "id": contract.id,
                     "filename": contract.filename,
                     "supplier_name": supplier_name_result,
-                    "contract_value": contract_value,
+                    "contract_value": contract_value if contract_value is not None else "Unknown",
                     "tags": [],  # Document model doesn't have tags field
                     "created_at": contract.created_at.isoformat() if contract.created_at else None,
                     "risk_score": getattr(contract, 'risk_score', None),
@@ -977,7 +987,7 @@ Documents to analyze:
                         "id": original_doc.id,
                         "filename": original_doc.filename,
                         "supplier_name": ai_doc.get("supplier_name", "Unknown"),
-                        "contract_value": ai_doc.get("contract_value", 0),
+                        "contract_value": ai_doc.get("contract_value") if ai_doc.get("contract_value") is not None else "Unknown",
                         "tags": [],
                         "created_at": original_doc.created_at.isoformat() if original_doc.created_at else None,
                         "risk_score": None,
@@ -1353,8 +1363,8 @@ DOCUMENTS TO ANALYZE:
                 
                 if original_doc:
                     # Extract contract value from AI response or metadata
-                    contract_value = ai_doc.get("contract_value", 0)
-                    if not contract_value and original_doc.extracted_metadata:
+                    contract_value = ai_doc.get("contract_value")
+                    if contract_value is None and original_doc.extracted_metadata:
                         # Try to extract from metadata amounts
                         amounts = original_doc.extracted_metadata.get('amounts', [])
                         for amount in amounts:
@@ -1366,7 +1376,7 @@ DOCUMENTS TO ANALYZE:
                         "id": original_doc.id,
                         "filename": original_doc.filename,
                         "supplier_name": ai_doc.get("supplier_name") or "Unknown",
-                        "contract_value": contract_value,
+                        "contract_value": contract_value if contract_value is not None else "Unknown",
                         "tags": [],
                         "created_at": original_doc.created_at.isoformat() if original_doc.created_at else None,
                         "risk_score": None,

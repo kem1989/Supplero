@@ -587,12 +587,16 @@ class ElasticsearchService:
                 }
             })
         
-        if filters.get("amount_min") or filters.get("amount_max"):
+        # Handle contract value filtering with multiple possible key names
+        amount_min = filters.get("amount_min") or filters.get("contract_value_min")
+        amount_max = filters.get("amount_max") or filters.get("contract_value_max")
+        
+        if amount_min or amount_max:
             amount_filter = {"range": {"contract_amount": {}}}
-            if filters.get("amount_min"):
-                amount_filter["range"]["contract_amount"]["gte"] = filters["amount_min"]
-            if filters.get("amount_max"):
-                amount_filter["range"]["contract_amount"]["lte"] = filters["amount_max"]
+            if amount_min:
+                amount_filter["range"]["contract_amount"]["gte"] = amount_min
+            if amount_max:
+                amount_filter["range"]["contract_amount"]["lte"] = amount_max
             filter_list.append(amount_filter)
         
         if filters.get("date_from") or filters.get("date_to"):
