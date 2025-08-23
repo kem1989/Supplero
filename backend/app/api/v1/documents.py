@@ -6,6 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Q
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, and_
+import json
+import re
 
 from app.core.database import get_db
 from app.core.auth import get_current_user
@@ -180,13 +182,44 @@ async def upload_document(
                 logger.error(f"Elasticsearch indexing failed for document {document.id}: {indexing_error}")
                 # Don't fail the upload if indexing fails
             
-            # Update status to PROCESSED AFTER clause extraction and indexing
+            # Generate and save document analysis
+            try:
+                logger.info(f"Generating document analysis for document {document.id}")
+                analysis_result = await _generate_document_analysis(
+                    document.original_filename,
+                    document.extracted_text[:2000] if document.extracted_text else "",
+                    extracted_clauses
+                )
+                
+                # Store analysis in document metadata
+                if not document.extracted_metadata:
+                    document.extracted_metadata = {}
+                document.extracted_metadata['ai_analysis'] = {
+                    "analysis_timestamp": datetime.now().isoformat(),
+                    "overall_risk_assessment": analysis_result.get("overall_risk", "medium"),
+                    "risk_summary": analysis_result.get("risk_summary", ""),
+                    "key_findings": analysis_result.get("key_findings", []),
+                    "recommendations": analysis_result.get("recommendations", []),
+                    "ai_confidence": analysis_result.get("confidence", 0.8)
+                }
+                
+                # Mark the document as modified so SQLAlchemy persists the changes
+                from sqlalchemy.orm.attributes import flag_modified
+                flag_modified(document, "extracted_metadata")
+                
+                logger.info(f"Document analysis generated and saved for document {document.id}")
+                
+            except Exception as analysis_error:
+                logger.error(f"Document analysis generation failed for document {document.id}: {str(analysis_error)}")
+                # Don't fail the upload if analysis generation fails
+            
+            # Update status to PROCESSED AFTER clause extraction, indexing, and analysis
             document.status = DocumentStatus.PROCESSED
             document.processing_completed_at = datetime.now()
             document.processed_at = datetime.now()
             db.commit()
             
-            logger.info(f"Document {document.id} processed successfully")
+            logger.info(f"Document {document.id} processed successfully with analysis")
             
         except Exception as processing_error:
             logger.error(f"Document processing failed for {document.id}: {processing_error}")
@@ -927,3 +960,209 @@ async def restore_document(
             error=str(e)
         )
         raise HTTPException(status_code=500, detail="Failed to restore document")
+
+
+@router.get("/{document_id}/analysis", response_model=Dict[str, Any])
+async def get_document_analysis(
+    document_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Get AI-powered analysis summary of document clauses and risk assessment"""
+    
+    try:
+        # Get the document with all details
+        document = db.query(Document).filter(
+            and_(
+                Document.id == document_id,
+                Document.organization_id == current_user.organization_id
+            )
+        ).first()
+        
+        if not document:
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Get extracted clauses for this document
+        from app.models.document import ContractClause
+        clauses = db.query(ContractClause).filter(
+            ContractClause.contract_id == document_id
+        ).all()
+        
+        if not clauses:
+            return {
+                "analysis_available": False,
+                "message": "No clauses found for analysis",
+                "summary": "This document has no extracted clauses to analyze."
+            }
+        
+        # Prepare clause data for AI analysis
+        clause_data = []
+        for clause in clauses:
+            clause_data.append({
+                "clause_type": clause.clause_type,
+                "clause_text": clause.clause_text[:500],  # Limit text length for tokens
+                "risk_level": clause.risk_level,
+                "confidence_score": clause.confidence_score,
+                "ai_analysis": clause.ai_analysis
+            })
+        
+        # Check if analysis exists in document metadata (generated during upload)
+        if (document.extracted_metadata and 
+            'ai_analysis' in document.extracted_metadata and 
+            document.extracted_metadata['ai_analysis'] and
+            document.extracted_metadata['ai_analysis'].get('risk_summary') and
+            document.extracted_metadata['ai_analysis'].get('key_findings')):
+            
+            existing_analysis = document.extracted_metadata['ai_analysis']
+            logger.info(f"Using analysis generated during document upload for document {document_id}")
+            
+            return {
+                "analysis_available": True,
+                "document_id": document_id,
+                "filename": document.original_filename,
+                "analysis_timestamp": existing_analysis.get("analysis_timestamp", datetime.now().isoformat()),
+                "clauses_analyzed": len(clauses),
+                "overall_risk_assessment": existing_analysis.get("overall_risk", "medium"),
+                "risk_summary": existing_analysis.get("risk_summary", ""),
+                "key_findings": existing_analysis.get("key_findings", []),
+                "recommendations": existing_analysis.get("recommendations", []),
+                "ai_confidence": existing_analysis.get("ai_confidence", 0.8),
+                "cached": False  # This is not cached, it's the original analysis from upload
+            }
+        
+        # If no analysis exists, it means the document was uploaded before analysis was implemented
+        # or the analysis generation failed during upload
+        logger.warning(f"No analysis found for document {document_id}. Analysis should have been generated during upload.")
+        
+        return {
+            "analysis_available": False,
+            "message": "No analysis available",
+            "summary": "This document was uploaded before analysis generation was implemented, or analysis generation failed during upload. Please re-upload the document to generate analysis."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to generate document analysis",
+            document_id=document_id,
+            error=str(e)
+        )
+        raise HTTPException(status_code=500, detail="Failed to generate document analysis")
+
+
+async def _generate_document_analysis(
+    filename: str,
+    document_text: str,
+    clauses: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Generate AI-powered analysis of document clauses and risk assessment"""
+    try:
+        # Check if OpenAI API key is available
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if not openai_api_key:
+            logger.warning("OpenAI API key not found - returning basic analysis")
+            return _generate_basic_analysis(clauses)
+        
+        # Import OpenAI client
+        try:
+            from openai import OpenAI
+            client = OpenAI(api_key=openai_api_key)
+        except ImportError:
+            logger.warning("OpenAI client not available - returning basic analysis")
+            return _generate_basic_analysis(clauses)
+        
+        # Prepare concise AI prompt for document analysis (max 100 words)
+        ai_prompt = f"""
+        You are a contract risk analysis expert. Provide a CONCISE analysis (max 100 words total) of this contract document.
+        
+        Document: {filename}
+        Document Text Preview: {document_text[:500]}...
+        
+        Extracted Clauses ({len(clauses)} total):
+        {json.dumps(clauses, indent=2)}
+        
+        Return ONLY a valid JSON object with this structure:
+        {{
+            "overall_risk": "medium",
+            "risk_summary": "Brief 1-2 sentence risk overview (max 50 words)",
+            "key_findings": ["Finding 1", "Finding 2"],
+            "recommendations": ["Recommendation 1", "Recommendation 2"],
+            "confidence": 0.85
+        }}
+        
+        IMPORTANT: Keep the entire analysis under 100 words total. Be concise and actionable.
+        """
+        
+        # Call OpenAI for analysis
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a contract risk analysis expert. Provide comprehensive, actionable risk assessments. Return only valid JSON."},
+                {"role": "user", "content": ai_prompt}
+            ],
+            temperature=0.1,
+            max_tokens=2000
+        )
+        
+        # Parse AI response
+        ai_response = response.choices[0].message.content.strip()
+        logger.info(f"AI document analysis response received: {ai_response[:500]}...")
+        
+        # Extract JSON from response
+        try:
+            # Look for JSON content
+            json_match = re.search(r'\{[\s\S]*\}', ai_response)
+            if json_match:
+                json_content = json_match.group()
+                analysis_result = json.loads(json_content)
+                
+                # Validate and clean the response
+                return {
+                    "overall_risk": analysis_result.get("overall_risk", "medium"),
+                    "risk_summary": analysis_result.get("risk_summary", "Risk analysis completed"),
+                    "key_findings": analysis_result.get("key_findings", []),
+                    "recommendations": analysis_result.get("recommendations", []),
+                    "clause_analysis": analysis_result.get("clause_analysis", []),
+                    "compliance_insights": analysis_result.get("compliance_insights", []),
+                    "confidence": min(1.0, max(0.0, analysis_result.get("confidence", 0.8)))
+                }
+            else:
+                logger.warning("No JSON content found in AI response")
+                return _generate_basic_analysis(clauses)
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse AI analysis response: {e}")
+            return _generate_basic_analysis(clauses)
+            
+    except Exception as e:
+        logger.error(f"AI document analysis failed: {str(e)}")
+        return _generate_basic_analysis(clauses)
+
+
+def _generate_basic_analysis(clauses: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Generate basic analysis when AI is not available"""
+    risk_levels = [clause.get("risk_level", "medium") for clause in clauses]
+    
+    # Determine overall risk based on highest risk clause
+    overall_risk = "low"
+    if "critical" in risk_levels:
+        overall_risk = "critical"
+    elif "high" in risk_levels:
+        overall_risk = "high"
+    elif "medium" in risk_levels:
+        overall_risk = "medium"
+    
+    return {
+        "overall_risk": overall_risk,
+        "risk_summary": f"Document contains {len(clauses)} clauses with {overall_risk} overall risk level. AI analysis not available.",
+        "key_findings": [
+            f"Found {len(clauses)} contract clauses",
+            f"Highest risk level: {overall_risk}"
+        ],
+        "recommendations": [
+            "Review all extracted clauses manually",
+            "Consider legal review for high-risk clauses"
+        ],
+        "confidence": 0.6
+    }

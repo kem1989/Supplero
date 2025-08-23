@@ -226,7 +226,7 @@ export default function SupplierCard({
       </div>
 
       {/* Metrics Section */}
-      {showMetrics && variant !== 'compact' && (
+      {showMetrics && variant === 'detailed' && (
         <div className="mb-4">
           <SupplierMetrics 
             metrics={getSupplierMetrics()} 

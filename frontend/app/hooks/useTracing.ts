@@ -27,12 +27,26 @@ export interface UseTracingReturn {
 }
 
 export const useTracing = (): UseTracingReturn => {
-  const [traceContext, setTraceContext] = useState<TraceContext>(getCurrentTraceContext());
+  const [traceContext, setTraceContext] = useState<TraceContext>(() => {
+    const context = getCurrentTraceContext();
+    return {
+      traceId: context.traceId,
+      correlationId: context.correlationId,
+      clientType: context.clientType,
+      timestamp: context.timestamp
+    };
+  });
   const [currentSpanId, setCurrentSpanId] = useState<string | null>(null);
 
   // Refresh trace context
   const refreshTraceContext = useCallback(() => {
-    setTraceContext(getCurrentTraceContext());
+    const context = getCurrentTraceContext();
+    setTraceContext({
+      traceId: context.traceId,
+      correlationId: context.correlationId,
+      clientType: context.clientType,
+      timestamp: context.timestamp
+    });
   }, []);
 
   // Create a new span for operations
@@ -48,7 +62,7 @@ export const useTracing = (): UseTracingReturn => {
       ...traceContext,
       event,
       spanId: currentSpanId,
-      ...data
+      ...(data || {})
     };
     logTraceInfo(event, eventData);
   }, [traceContext, currentSpanId]);
@@ -115,6 +129,7 @@ export const useOperationTracing = (operationName: string) => {
     additionalData?: Record<string, any>
   ): Promise<T> => {
     const spanId = tracing.createNewSpan(operationName);
+    const startTime = Date.now();
     
     try {
       tracing.logTraceEvent('Operation Started', {
@@ -123,7 +138,6 @@ export const useOperationTracing = (operationName: string) => {
         ...additionalData
       });
       
-      const startTime = Date.now();
       const result = await operation();
       const duration = Date.now() - startTime;
       

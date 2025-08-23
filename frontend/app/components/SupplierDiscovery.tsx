@@ -4,7 +4,17 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { api } from '../lib/auth';
-import { SupplierCard, type SupplierCardData, AdvancedSearchInterface, type AdvancedSearchFilters } from './suppliers';
+import { SupplierCard, type SupplierCardData, AdvancedSearchInterface } from './suppliers';
+
+interface AdvancedSearchFilters {
+  name?: string;
+  industry?: string;
+  country?: string;
+  risk_level?: string;
+  company_size?: string;
+  is_watchlisted?: boolean;
+  has_contracts?: boolean;
+}
 
 interface SupplierSearchResult {
   id: number;

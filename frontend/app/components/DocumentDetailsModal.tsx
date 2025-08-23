@@ -14,6 +14,19 @@ interface ContractClause {
   created_at: string;
 }
 
+interface DocumentAnalysis {
+  analysis_available: boolean;
+  document_id: number;
+  filename: string;
+  analysis_timestamp: string;
+  clauses_analyzed: number;
+  overall_risk_assessment: string;
+  risk_summary: string;
+  key_findings: string[];
+  recommendations: string[];
+  ai_confidence: number;
+}
+
 interface DocumentDetails {
   document_id: number;
   filename: string;
@@ -57,12 +70,16 @@ interface DocumentDetailsModalProps {
 
 export default function DocumentDetailsModal({ documentId, isOpen, onClose }: DocumentDetailsModalProps) {
   const [documentDetails, setDocumentDetails] = useState<DocumentDetails | null>(null);
+  const [documentAnalysis, setDocumentAnalysis] = useState<DocumentAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [analysisLoading, setAnalysisLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && documentId) {
       fetchDocumentDetails();
+      fetchDocumentAnalysis();
     }
   }, [isOpen, documentId]);
 
@@ -77,6 +94,24 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
       setError(err.response?.data?.detail || 'Failed to fetch document details');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchDocumentAnalysis = async () => {
+    setAnalysisLoading(true);
+    setAnalysisError(null);
+    
+    try {
+      console.log('Fetching document analysis for document ID:', documentId);
+      const response = await api.get(`/documents/${documentId}/analysis`);
+      console.log('Document analysis response:', response.data);
+      setDocumentAnalysis(response.data);
+    } catch (err: any) {
+      console.error('Document analysis error:', err);
+      console.error('Error response:', err.response);
+      setAnalysisError(err.response?.data?.detail || err.message || 'Failed to fetch document analysis');
+    } finally {
+      setAnalysisLoading(false);
     }
   };
 
@@ -114,11 +149,15 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
     return new Date(dateString).toLocaleString();
   };
 
+  const formatConfidence = (confidence: number) => {
+    return Math.round(confidence * 100);
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-slate-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden">
+      <div className="bg-slate-900 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-700">
           <h2 className="text-xl font-semibold text-white">Document Details</h2>
@@ -181,6 +220,114 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
                     <p className="text-white">{formatDate(documentDetails.upload_timestamp)}</p>
                   </div>
                 </div>
+              </div>
+
+              {/* Analysis Summary */}
+              <div className="bg-slate-800/50 rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-medium text-white">Analysis Summary</h3>
+                    {documentAnalysis && documentAnalysis.ai_confidence && (
+                      <div className="flex items-center space-x-2">
+                        <span className="text-slate-400 text-sm">AI Confidence:</span>
+                        <span className={`text-sm font-medium ${getConfidenceColor(formatConfidence(documentAnalysis.ai_confidence))}`}>
+                          {formatConfidence(documentAnalysis.ai_confidence)}%
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                
+                {analysisLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                    <span className="text-slate-400 ml-3">Analyzing document...</span>
+                  </div>
+                ) : analysisError ? (
+                  <div className="text-center py-8">
+                    <div className="text-red-400 mb-4">{analysisError}</div>
+                    <button
+                      onClick={fetchDocumentAnalysis}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors text-sm"
+                    >
+                      Retry Analysis
+                    </button>
+                  </div>
+                ) : documentAnalysis ? (
+                  <div className="space-y-4">
+                    {/* Overall Risk Assessment */}
+                    <div className="flex items-center space-x-3">
+                      <span className="text-slate-400 text-sm">Overall Risk:</span>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getRiskLevelColor(documentAnalysis.overall_risk_assessment || 'medium')}`}>
+                        {(documentAnalysis.overall_risk_assessment || 'medium').toUpperCase()}
+                      </span>
+                      <span className="text-slate-400 text-sm">
+                        ({documentAnalysis.clauses_analyzed || 0} clauses analyzed)
+                      </span>
+                    </div>
+
+                    {/* Risk Summary */}
+                    {documentAnalysis.risk_summary && documentAnalysis.risk_summary.trim() && (
+                      <div>
+                        <span className="text-slate-400 text-sm">Risk Summary:</span>
+                        <p className="text-white text-sm mt-1 bg-slate-700/50 p-3 rounded border border-slate-600/20">
+                          {documentAnalysis.risk_summary}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Key Findings */}
+                    {documentAnalysis.key_findings && documentAnalysis.key_findings.length > 0 && (
+                      <div>
+                        <span className="text-slate-400 text-sm">Key Findings:</span>
+                        <ul className="mt-2 space-y-1">
+                          {documentAnalysis.key_findings.map((finding, index) => (
+                            <li key={index} className="text-white text-sm bg-slate-700/50 p-2 rounded border border-slate-600/20 flex items-start">
+                              <span className="text-blue-400 mr-2">•</span>
+                              {finding}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Recommendations */}
+                    {documentAnalysis.recommendations && documentAnalysis.recommendations.length > 0 && (
+                      <div>
+                        <span className="text-slate-400 text-sm">Recommendations:</span>
+                        <ul className="mt-2 space-y-1">
+                          {documentAnalysis.recommendations.map((recommendation, index) => (
+                            <li key={index} className="text-white text-sm bg-slate-700/50 p-2 rounded border border-slate-600/20 flex items-start">
+                              <span className="text-green-400 mr-2">→</span>
+                              {recommendation}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+
+
+                    {/* Analysis Timestamp */}
+                    {documentAnalysis.analysis_timestamp && (
+                      <div className="text-right">
+                        <span className="text-slate-500 text-xs">
+                          Analysis generated: {formatDate(documentAnalysis.analysis_timestamp)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8 text-slate-400">
+                    <div className="space-y-3">
+                      <p className="text-lg font-medium">No Analysis Available</p>
+                      <p className="text-sm">
+                        This document was uploaded before analysis generation was implemented.
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        To get AI-powered risk analysis, please re-upload this document.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Supplier Information */}

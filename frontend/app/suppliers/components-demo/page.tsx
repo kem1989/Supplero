@@ -258,8 +258,8 @@ export default function SupplierComponentsDemo() {
                   variant={selectedVariant}
                   showMetrics={selectedVariant !== 'compact'}
                   showActions={true}
-                  onViewDetails={handleSupplierAction}
-                  onAnalyzeRisk={handleSupplierAction}
+                  onViewDetails={(supplier) => handleSupplierAction('view-details', supplier)}
+                  onAnalyzeRisk={(supplier) => handleSupplierAction('analyze-risk', supplier)}
                   onToggleWatchlist={(supplier) => handleSupplierAction('toggle-watchlist', supplier)}
                 />
               ))}
