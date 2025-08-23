@@ -1,0 +1,25 @@
+SUPPLY AGREEMENT
+Contract Number: TEST-2025-001
+Effective Date: January 1, 2025
+Expiration Date: January 1, 2028
+
+PARTIES
+BUYER:
+Test Company Inc.
+123 Test Street
+Test City, TC 12345
+
+SUPPLIER:
+Test Supplier Corp.
+456 Supplier Avenue
+Supplier City, SC 67890
+
+1. SCOPE OF WORK
+The Supplier shall provide test services to the Buyer.
+
+2. PAYMENT TERMS
+Total Contract Value: ,000.00 USD
+Payment Schedule: Monthly payments of ,333.33
+
+3. TERMINATION
+Either party may terminate with 30 days written notice.

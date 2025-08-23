@@ -6,6 +6,8 @@ import structlog
 from typing import Dict, Any, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc, Integer
+import time
+import math
 
 from app.models.user import User
 from app.models.document import Document
@@ -20,6 +22,7 @@ async def execute_search_contracts(
     current_user: User
 ) -> Dict[str, Any]:
     """Execute contract search with INTENT + Elasticsearch -> RAG fallback flow"""
+    start_time = time.time()
     try:
         BaseHandler.log_execution_start(
             "search_contracts",
@@ -31,15 +34,26 @@ async def execute_search_contracts(
         # Get the original natural language query from parameters
         original_query = parameters.get("query") or parameters.get("raw_query")
         
+        logger.info(f"Starting contract search with parameters: {parameters}")
+        logger.info(f"Original query: {original_query}")
+        
         # Phase 1: Try Elasticsearch search first using extracted parameters
-        logger.info("Phase 1: Attempting Elasticsearch search with extracted parameters")
+        logger.info("=== PHASE 1: ELASTICSEARCH SEARCH ===")
+        logger.info("Attempting Elasticsearch search with extracted parameters")
+        elasticsearch_start = time.time()
+        
         elasticsearch_results = await _try_elasticsearch_search(
             parameters=parameters,
             db=db,
             current_user=current_user
         )
         
+        elasticsearch_time = (time.time() - elasticsearch_start) * 1000
+        logger.info(f"Elasticsearch search completed in {elasticsearch_time:.2f}ms")
+        
         if elasticsearch_results and len(elasticsearch_results) > 0:
+            logger.info(f"Elasticsearch returned {len(elasticsearch_results)} initial results")
+            
             # Filter out low-relevance Elasticsearch results to prevent false positives
             high_relevance_results = []
             for result in elasticsearch_results:
@@ -52,7 +66,12 @@ async def execute_search_contracts(
                     logger.info(f"Filtering out low-relevance Elasticsearch result (score: {relevance_score})")
             
             if high_relevance_results:
-                logger.info(f"Elasticsearch found {len(high_relevance_results)} high-relevance results, using fast search")
+                total_time = (time.time() - start_time) * 1000
+                logger.info(f"=== SEARCH COMPLETED: ELASTICSEARCH SUCCESS ===")
+                logger.info(f"Elasticsearch found {len(high_relevance_results)} high-relevance results")
+                logger.info(f"Total search time: {total_time:.2f}ms (Elasticsearch: {elasticsearch_time:.2f}ms)")
+                logger.info(f"Search strategy: Fast indexed search via Elasticsearch")
+                
                 return BaseHandler.create_success_response(
                     message=f"Found {len(high_relevance_results)} contracts using Elasticsearch",
                     parameters=parameters,
@@ -60,22 +79,41 @@ async def execute_search_contracts(
                         "contracts": high_relevance_results,
                         "total_found": len(high_relevance_results),
                         "search_strategy": "elasticsearch_search",
-                        "search_method": "fast_indexed_search"
+                        "search_method": "fast_indexed_search",
+                        "search_performance": {
+                            "total_time_ms": total_time,
+                            "elasticsearch_time_ms": elasticsearch_time,
+                            "rag_time_ms": 0,
+                            "phase": "elasticsearch_only"
+                        }
                     }
                 )
             else:
                 logger.info("Elasticsearch results filtered out due to low relevance, falling back to RAG")
+        else:
+            logger.info("Elasticsearch returned no results, proceeding to RAG fallback")
         
         # Phase 2: Fallback to RAG semantic search if Elasticsearch returns no results
         if original_query:
-            logger.info(f"Phase 2: Elasticsearch returned no results, falling back to RAG semantic search for: {original_query}")
+            logger.info("=== PHASE 2: RAG SEMANTIC SEARCH FALLBACK ===")
+            logger.info(f"Elasticsearch returned no results, falling back to RAG semantic search for: {original_query}")
+            rag_start = time.time()
+            
             rag_results = await _direct_rag_semantic_search(
                 query=original_query,
                 db=db,
                 current_user=current_user
             )
             
+            rag_time = (time.time() - rag_start) * 1000
+            total_time = (time.time() - start_time) * 1000
+            
             if rag_results:
+                logger.info(f"=== SEARCH COMPLETED: RAG FALLBACK SUCCESS ===")
+                logger.info(f"RAG semantic search found {len(rag_results)} matching contracts")
+                logger.info(f"Total search time: {total_time:.2f}ms (Elasticsearch: {elasticsearch_time:.2f}ms, RAG: {rag_time:.2f}ms)")
+                logger.info(f"Search strategy: RAG fallback after Elasticsearch returned no results")
+                
                 return BaseHandler.create_success_response(
                     message=f"Found {len(rag_results)} contracts using RAG semantic search fallback",
                     parameters=parameters,
@@ -84,11 +122,22 @@ async def execute_search_contracts(
                         "total_found": len(rag_results),
                         "search_strategy": "RAG_FALLBACK",
                         "search_method": "semantic_analysis",
-                        "fallback_reason": "Elasticsearch returned no results"
+                        "fallback_reason": "Elasticsearch returned no results",
+                        "search_performance": {
+                            "total_time_ms": total_time,
+                            "elasticsearch_time_ms": elasticsearch_time,
+                            "rag_time_ms": rag_time,
+                            "phase": "elasticsearch_then_rag"
+                        }
                     }
                 )
+            else:
+                logger.info("RAG semantic search also returned no results")
         
-        # Fallback to structured database search with proper metadata extraction
+        # Phase 3: Final fallback to structured database search
+        logger.info("=== PHASE 3: STRUCTURED DATABASE SEARCH ===")
+        logger.info("Both Elasticsearch and RAG returned no results, using structured database search")
+        db_start = time.time()
         
         # Extract search parameters
         supplier_name = parameters.get("supplier_name")
@@ -252,6 +301,12 @@ async def execute_search_contracts(
                     }
                 )
         
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"=== SEARCH COMPLETED: DATABASE SEARCH SUCCESS ===")
+        logger.info(f"Database search found {len(results)} matching contracts")
+        logger.info(f"Total search time: {total_time:.2f}ms (Elasticsearch: {elasticsearch_time:.2f}ms, RAG: {rag_time:.2f}ms, DB: {db_start:.2f}ms)")
+        logger.info(f"Search strategy: Structured database search")
+        
         return BaseHandler.create_success_response(
             message=f"Found {len(results)} contracts matching criteria",
             parameters=parameters,
@@ -263,7 +318,13 @@ async def execute_search_contracts(
                     "value_range": f"{contract_value_min}-{contract_value_max}",
                     "tags": tags
                 },
-                "search_strategy": "database_search"
+                "search_strategy": "database_search",
+                "search_performance": {
+                    "total_time_ms": total_time,
+                    "elasticsearch_time_ms": elasticsearch_time,
+                    "rag_time_ms": rag_time,
+                    "phase": "elasticsearch_then_rag_then_db"
+                }
             }
         )
         
@@ -944,6 +1005,7 @@ async def _try_elasticsearch_search(
     Try Elasticsearch search first using extracted parameters.
     Returns results if found, empty list if no results or error.
     """
+    start_time = time.time()
     try:
         from app.core.elasticsearch_service import ElasticsearchService
         
@@ -981,7 +1043,17 @@ async def _try_elasticsearch_search(
         # Add organization filter
         filters["organization_id"] = current_user.organization_id
         
-        logger.info(f"Elasticsearch search query: '{search_query}', filters: {filters}")
+        # Skip Elasticsearch if no structured parameters were extracted
+        # This prevents semantic queries from returning all contracts via match_all
+        if not search_query and not any([contract_value_min, contract_value_max, date_from, date_to, tags]):
+            logger.info("No structured parameters extracted - skipping Elasticsearch to avoid match_all query")
+            logger.info("Query will proceed directly to RAG semantic search")
+            return []
+        
+        logger.info(f"Elasticsearch search parameters:")
+        logger.info(f"  Query: '{search_query}'")
+        logger.info(f"  Filters: {filters}")
+        logger.info(f"  Organization ID: {current_user.organization_id}")
         
         # Execute Elasticsearch search
         search_result = await es_service.search_contracts(
@@ -991,16 +1063,49 @@ async def _try_elasticsearch_search(
             page_size=20
         )
         
+        search_time = (time.time() - start_time) * 1000
+        
         if search_result.total_count > 0:
-            logger.info(f"Elasticsearch found {search_result.total_count} contracts in {search_result.search_time_ms}ms")
+            logger.info(f"✅ Elasticsearch SUCCESS: Found {search_result.total_count} contracts in {search_result.search_time_ms:.2f}ms")
+            logger.info(f"  Elasticsearch service time: {search_result.search_time_ms:.2f}ms")
+            logger.info(f"  Total handler time: {search_time:.2f}ms")
+            logger.info(f"  Results will be filtered for relevance")
             return _format_elasticsearch_results(search_result.documents)
         else:
-            logger.info("Elasticsearch returned no results")
+            logger.info(f"❌ Elasticsearch NO RESULTS: No contracts found in {search_time:.2f}ms")
+            logger.info(f"  Query: '{search_query}'")
+            logger.info(f"  Filters applied: {filters}")
             return []
             
     except Exception as e:
-        logger.warning(f"Elasticsearch search failed, will fallback to RAG: {e}")
+        search_time = (time.time() - start_time) * 1000
+        logger.warning(f"⚠️ Elasticsearch search FAILED in {search_time:.2f}ms, will fallback to RAG: {e}")
+        logger.debug(f"Elasticsearch error details: {str(e)}")
         return []
+
+
+def _normalize_elasticsearch_score(score: float) -> float:
+    """
+    Normalize Elasticsearch _score to a 0.0-1.0 range.
+    
+    Elasticsearch scores can be any positive number, typically 0.0 to 10.0+.
+    We normalize this to a 0.0-1.0 range for consistent relevance filtering.
+    
+    Args:
+        score: Raw Elasticsearch _score
+        
+    Returns:
+        Normalized score between 0.0 and 1.0
+    """
+    if score <= 0:
+        return 0.0
+    
+    # Use a sigmoid-like normalization to map scores to 0.0-1.0
+    # This handles the typical range of Elasticsearch scores (0.0 to 10.0+)
+    normalized = 1.0 / (1.0 + math.exp(-(score - 2.0)))
+    
+    # Ensure the result is between 0.0 and 1.0
+    return max(0.0, min(1.0, normalized))
 
 
 def _format_elasticsearch_results(es_documents: list) -> list:
@@ -1012,15 +1117,15 @@ def _format_elasticsearch_results(es_documents: list) -> list:
         source_doc = doc.get("_source", doc)
         
         formatted_doc = {
-            "id": source_doc.get("document_id") or source_doc.get("id"),
-            "filename": source_doc.get("filename", ""),
+            "id": source_doc.get("document_id"),
+            "filename": source_doc.get("filename"),
             "supplier_name": source_doc.get("supplier_name"),
             "contract_value": source_doc.get("contract_amount") or source_doc.get("contract_value"),
             "tags": source_doc.get("tags", []),
             "created_at": source_doc.get("created_at"),
             "risk_score": source_doc.get("risk_score"),
             "extracted_text_preview": source_doc.get("extracted_text", "")[:500] if source_doc.get("extracted_text") else None,
-            "relevance_score": doc.get("_score", 0.0),
+            "relevance_score": _normalize_elasticsearch_score(doc.get("_score", 0.0)),
             "search_highlights": doc.get("highlight", [])
         }
         formatted_results.append(formatted_doc)
@@ -1043,21 +1148,22 @@ async def _direct_rag_semantic_search(
     - "Find contracts with termination penalties"
     - "Contracts with semiconductor suppliers"
     """
+    start_time = time.time()
     try:
         import openai
         import os
         import json
         from app.models.document import Document
         
+        logger.info(f"🚀 Starting RAG semantic search for query: '{query}'")
+        
         # Set up OpenAI client
         openai_api_key = os.getenv("OPENAI_API_KEY")
         if not openai_api_key:
-            logger.warning("OpenAI API key not found, skipping RAG search")
+            logger.warning("⚠️ OpenAI API key not found, skipping RAG search")
             return []
         
         client = openai.OpenAI(api_key=openai_api_key)
-        
-        logger.info(f"Starting direct RAG semantic search for query: '{query}'")
         
         # Pre-filter: Check for obvious industry mismatches to prevent false positives
         query_lower = query.lower()
@@ -1073,10 +1179,10 @@ async def _direct_rag_semantic_search(
         ).limit(50).all()  # Increased limit for better coverage
         
         if not documents:
-            logger.warning("No processed documents found for RAG search")
+            logger.warning("⚠️ No processed documents found for RAG search")
             return []
         
-        logger.info(f"Analyzing {len(documents)} documents with RAG semantic search")
+        logger.info(f"📚 Analyzing {len(documents)} documents with RAG semantic search")
         
         # Pre-filter documents to avoid obvious industry mismatches
         filtered_documents = []
@@ -1092,26 +1198,25 @@ async def _direct_rag_semantic_search(
             semiconductor_terms = ["semiconductor", "electronics", "electronic", "chip", "chips", "manufacturing"]
             is_semiconductor_doc = any(term in doc_text_lower for term in semiconductor_terms)
             
-            logger.info(f"Document {doc.id} text preview: {doc_text_lower[:200]}")
-            logger.info(f"Is healthcare query: {is_healthcare_query}, Is semiconductor doc: {is_semiconductor_doc}")
-            
             # Skip obvious mismatches
             if is_healthcare_query and is_semiconductor_doc:
-                logger.info(f"Pre-filtering: Skipping semiconductor document {doc.id} for healthcare query")
+                logger.info(f"🔍 Pre-filtering: Skipping semiconductor document {doc.id} for healthcare query")
                 continue
             if is_food_query and is_semiconductor_doc:
-                logger.info(f"Pre-filtering: Skipping semiconductor document {doc.id} for food query")
+                logger.info(f"🔍 Pre-filtering: Skipping semiconductor document {doc.id} for food query")
                 continue
             if is_automotive_query and is_semiconductor_doc and "automotive" not in doc_text_lower:
-                logger.info(f"Pre-filtering: Skipping non-automotive semiconductor document {doc.id} for automotive query")
+                logger.info(f"🔍 Pre-filtering: Skipping non-automotive semiconductor document {doc.id} for automotive query")
                 continue
                 
             filtered_documents.append(doc)
         
         # If pre-filtering removed all documents, return empty result
         if not filtered_documents:
-            logger.info("Pre-filtering removed all documents due to industry mismatch")
+            logger.info("⚠️ Pre-filtering removed all documents due to industry mismatch")
             return []
+        
+        logger.info(f"📋 After pre-filtering: {len(filtered_documents)} documents remain for AI analysis")
         
         # Prepare filtered documents for AI analysis
         document_contexts = []
@@ -1189,6 +1294,9 @@ DOCUMENTS TO ANALYZE:
 {json.dumps(document_contexts[:10], indent=2)}
 """
         
+        logger.info(f"🤖 Calling OpenAI API for semantic analysis...")
+        openai_start = time.time()
+        
         # Call OpenAI for semantic analysis
         response = client.chat.completions.create(
             model="gpt-4o-mini",
@@ -1203,9 +1311,12 @@ DOCUMENTS TO ANALYZE:
             max_tokens=3000
         )
         
+        openai_time = (time.time() - openai_start) * 1000
+        logger.info(f"✅ OpenAI API call completed in {openai_time:.2f}ms")
+        
         # Parse AI response
         ai_response = response.choices[0].message.content.strip()
-        logger.info(f"Direct RAG AI response received (length: {len(ai_response)})")
+        logger.info(f"📝 Direct RAG AI response received (length: {len(ai_response)})")
         
         # Extract JSON from response
         try:
@@ -1220,7 +1331,7 @@ DOCUMENTS TO ANALYZE:
                 ai_results = [ai_results] if ai_results else []
                 
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse RAG AI response as JSON: {e}")
+            logger.error(f"❌ Failed to parse RAG AI response as JSON: {e}")
             logger.debug(f"AI response: {ai_response[:500]}...")
             return []
         
@@ -1231,7 +1342,7 @@ DOCUMENTS TO ANALYZE:
                 # Enforce minimum relevance score of 0.7
                 relevance_score = ai_doc.get("relevance_score", 0.0)
                 if relevance_score < 0.7:
-                    logger.info(f"Rejecting document {ai_doc.get('document_id')} with low relevance score: {relevance_score}")
+                    logger.info(f"🔍 Rejecting document {ai_doc.get('document_id')} with low relevance score: {relevance_score}")
                     continue
                 
                 doc_id = str(ai_doc["document_id"])
@@ -1266,11 +1377,17 @@ DOCUMENTS TO ANALYZE:
                     }
                     rag_contracts.append(rag_contract)
         
-        logger.info(f"Direct RAG semantic search completed: found {len(rag_contracts)} matching contracts")
+        total_time = (time.time() - start_time) * 1000
+        logger.info(f"🎯 RAG semantic search completed in {total_time:.2f}ms")
+        logger.info(f"  OpenAI API time: {openai_time:.2f}ms")
+        logger.info(f"  Document processing time: {total_time - openai_time:.2f}ms")
+        logger.info(f"  Found {len(rag_contracts)} matching contracts")
+        
         return rag_contracts
         
     except Exception as e:
-        logger.error(f"Direct RAG semantic search failed: {e}")
+        total_time = (time.time() - start_time) * 1000
+        logger.error(f"❌ Direct RAG semantic search failed in {total_time:.2f}ms: {e}")
         import traceback
         logger.debug(f"RAG error traceback: {traceback.format_exc()}")
         return []

@@ -1,17 +1,13 @@
 """
-Elasticsearch service for fast contract discovery and search.
-Provides sub-500ms search performance for contract queries.
+Elasticsearch service for contract search and indexing.
 """
 
-import json
-import time
-from typing import Dict, List, Optional, Any, Union
-from datetime import datetime, date
-from elasticsearch import Elasticsearch, NotFoundError
-from elasticsearch.exceptions import ConnectionError, RequestError
 import structlog
+import time
 import re
-
+from typing import Dict, Any, List, Optional
+from elasticsearch import Elasticsearch
+from elasticsearch.exceptions import NotFoundError, RequestError
 from app.core.config import settings
 from app.core.logging import get_logger
 
@@ -298,18 +294,76 @@ class ElasticsearchService:
         
         # Extract supplier name from metadata
         supplier_name = None
-        if metadata.get("parties"):
+        
+        # First, try to get the supplier name directly from metadata (most reliable)
+        if metadata.get("supplier_name"):
+            supplier_name = metadata["supplier_name"]
+        
+        # If no direct supplier name, try to extract from parties context
+        if not supplier_name and metadata.get("parties"):
             parties = metadata["parties"]
             for party in parties:
                 if party.get("value", "").lower() == "supplier":
                     # Look for supplier name in the context
                     context = party.get("context", "")
-                    # Extract company name from context (this is a simplified approach)
-                    # In a real implementation, you'd want more sophisticated extraction
-                    if "Global Electronics Manufacturing Ltd." in context:
-                        supplier_name = "Global Electronics Manufacturing Ltd."
-                    elif "ABC Corp" in context:
-                        supplier_name = "ABC Corp"
+                    # Extract company name from context using intelligent parsing
+                    if context:
+                        # Look for common patterns in supplier context
+                        lines = context.split('\n')
+                        for line in lines:
+                            line = line.strip()
+                            # Skip empty lines and common labels
+                            if not line or line.lower() in ['supplier:', 'party:', 'company:']:
+                                continue
+                            
+                            # Look for lines that contain company-like patterns
+                            # Company names usually contain words with capital letters and may have Ltd., Inc., Corp, etc.
+                            if any(word in line for word in ['Ltd.', 'Inc.', 'Corp', 'Co.', 'S.A.', 'AG', 'LLC']):
+                                # Extract the company name part
+                                supplier_name = line.strip()
+                                break
+                            
+                            # Look for lines that look like company names (multiple capitalized words)
+                            words = line.split()
+                            if len(words) >= 2 and all(word[0].isupper() for word in words if word):
+                                supplier_name = line.strip()
+                                break
+                        
+                        # If we still don't have a supplier name, try to extract from the full context
+                        if not supplier_name:
+                            # Look for patterns like "SUPPLIER: Company Name" or similar
+                            supplier_patterns = [
+                                r'SUPPLIER:\s*([^\n]+)',
+                                r'Supplier:\s*([^\n]+)',
+                                r'Party:\s*([^\n]+)',
+                                r'Company:\s*([^\n]+)'
+                            ]
+                            
+                            for pattern in supplier_patterns:
+                                match = re.search(pattern, context, re.IGNORECASE)
+                                if match:
+                                    supplier_name = match.group(1).strip()
+                                    break
+                        
+                        break
+        
+        # If we still don't have a supplier name, try to extract it from the extracted_text
+        if not supplier_name and document_data.get("extracted_text"):
+            text = document_data["extracted_text"]
+            # Look for supplier information in the text
+            supplier_patterns = [
+                r'SUPPLIER:\s*([^\n]+)',
+                r'Supplier:\s*([^\n]+)',
+                r'SUPPLIER\s*([^\n]+)',
+                r'Supplier\s*([^\n]+)'
+            ]
+            
+            for pattern in supplier_patterns:
+                match = re.search(pattern, text, re.IGNORECASE)
+                if match:
+                    potential_supplier = match.group(1).strip()
+                    # Clean up the supplier name (remove extra whitespace, etc.)
+                    supplier_name = ' '.join(potential_supplier.split())
                     break
         
         # Extract contract date from metadata
@@ -448,20 +502,42 @@ class ElasticsearchService:
         }
         
         if query and query.strip() and query != "*":
-            search_body["query"]["bool"]["must"].append({
-                "multi_match": {
-                    "query": query,
-                    "fields": [
-                        "supplier_name^3",
-                        "extracted_text^2",
-                        "filename^1.5",
-                        "tags^2"
-                    ],
-                    "type": "best_fields",
-                    "fuzziness": "0",  # Disable fuzzy matching for precise results
-                    "minimum_should_match": "75%"  # Require 75% of terms to match
-                }
-            })
+            # Check if this is a supplier name search (contains multiple words)
+            query_terms = query.strip().split()
+            is_supplier_search = len(query_terms) > 1 and any(word[0].isupper() for word in query_terms)
+            
+            if is_supplier_search:
+                # For supplier names, use more flexible matching
+                search_body["query"]["bool"]["must"].append({
+                    "multi_match": {
+                        "query": query,
+                        "fields": [
+                            "supplier_name^3",
+                            "extracted_text^2",
+                            "filename^1.5",
+                            "tags^2"
+                        ],
+                        "type": "best_fields",
+                        "fuzziness": "1",  # Allow slight fuzziness for supplier names
+                        "minimum_should_match": "50%"  # More lenient for supplier searches
+                    }
+                })
+            else:
+                # For other queries, use strict matching
+                search_body["query"]["bool"]["must"].append({
+                    "multi_match": {
+                        "query": query,
+                        "fields": [
+                            "supplier_name^3",
+                            "extracted_text^2",
+                            "filename^1.5",
+                            "tags^2"
+                        ],
+                        "type": "best_fields",
+                        "fuzziness": "0",  # Disable fuzzy matching for precise results
+                        "minimum_should_match": "75%"  # Require 75% of terms to match
+                    }
+                })
         elif query == "*" or not query or not query.strip():
             # If query is "*" or empty, return all documents
             search_body["query"]["bool"]["must"].append({
@@ -563,7 +639,7 @@ class ElasticsearchService:
                 "risk_level": source.get("risk_level"),
                 "status": source.get("status"),
                 "tags": source.get("tags", []),
-                "score": hit["_score"],
+                "_score": hit["_score"],
                 "highlights": hit.get("highlight", {})
             }
             
