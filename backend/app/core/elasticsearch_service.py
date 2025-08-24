@@ -633,7 +633,8 @@ class ElasticsearchService:
             source = hit["_source"]
             document = {
                 "document_id": source.get("document_id"),
-                "filename": source.get("filename"),
+                "filename": source.get("original_filename"),  # Use original_filename for display
+                "original_filename": source.get("original_filename"),  # Keep for backward compatibility
                 "supplier_name": source.get("supplier_name"),
                 "contract_amount": source.get("contract_amount"),
                 "currency": source.get("currency"),

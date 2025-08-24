@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from './auth/ProtectedRoute';
 import { api } from '../lib/auth';
+import DocumentDetailsModal from './DocumentDetailsModal';
 
 interface SearchResult {
   documents: Array<{
@@ -61,6 +62,18 @@ export default function ContractDiscovery() {
   const [results, setResults] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
+
+  const handleViewDocumentDetails = (documentId: number) => {
+    setSelectedDocumentId(documentId);
+    setShowDetailsModal(true);
+  };
+
+  const closeDetailsModal = () => {
+    setShowDetailsModal(false);
+    setSelectedDocumentId(null);
+  };
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -442,6 +455,7 @@ export default function ContractDiscovery() {
                       <div className="flex justify-between items-start mb-3">
                         <div className="flex-1">
                           <h4 className="font-medium text-white">{doc.filename}</h4>
+                          {/* Show original filename only if it's different from the main filename */}
                           {doc.original_filename && doc.original_filename !== doc.filename && (
                             <p className="text-xs text-slate-500">Original: {doc.original_filename}</p>
                           )}
@@ -459,7 +473,28 @@ export default function ContractDiscovery() {
                           </div>
                         </div>
                         <div className="text-right">
-                          <div className="text-sm text-slate-500">Relevance</div>
+                          <div className="flex items-center space-x-3">
+                            {/* View Details Button */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const docId = typeof doc.id === 'number' ? doc.id : 
+                                             typeof doc.document_id === 'number' ? doc.document_id :
+                                             parseInt(String(doc.id || doc.document_id || '0'), 10);
+                                if (docId && !isNaN(docId)) {
+                                  handleViewDocumentDetails(docId);
+                                }
+                              }}
+                              className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-colors"
+                              title="View document details"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                              </svg>
+                            </button>
+                          </div>
+                          <div className="text-sm text-slate-500 mt-2">Relevance</div>
                           <div className="font-medium text-white">
                             {((doc.relevance_score || doc.score || 0) * 100).toFixed(0)}%
                           </div>
@@ -499,6 +534,15 @@ export default function ContractDiscovery() {
               )}
             </div>
           </div>
+        )}
+
+        {/* Document Details Modal */}
+        {selectedDocumentId && (
+          <DocumentDetailsModal
+            documentId={selectedDocumentId}
+            isOpen={showDetailsModal}
+            onClose={closeDetailsModal}
+          />
         )}
           </div>
         </div>

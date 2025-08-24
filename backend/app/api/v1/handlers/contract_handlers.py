@@ -273,7 +273,8 @@ async def execute_search_contracts(
             if include_contract:
                 results.append({
                     "id": contract.id,
-                    "filename": contract.filename,
+                    "filename": contract.original_filename,  # Use original_filename for display
+                    "original_filename": contract.original_filename,  # Keep for backward compatibility
                     "supplier_name": supplier_name_result,
                     "contract_value": contract_value if contract_value is not None else "Unknown",
                     "tags": [],  # Document model doesn't have tags field
@@ -393,7 +394,8 @@ async def execute_get_details(
         # Format detailed response
         contract_details = {
             "id": contract.id,
-            "filename": contract.filename,
+            "filename": contract.original_filename,  # Use original_filename for display
+            "original_filename": contract.original_filename,  # Keep for backward compatibility
             "supplier_name": supplier_name,
             "contract_value": contract_value,
             "tags": [],
@@ -407,7 +409,7 @@ async def execute_get_details(
         }
         
         return BaseHandler.create_success_response(
-            message=f"Retrieved details for contract {contract.filename}",
+            message=f"Retrieved details for contract {contract.original_filename}",
             parameters=parameters,
             data={"contract_details": contract_details}
         )
@@ -470,7 +472,8 @@ async def execute_export(
             
             export_data.append({
                 "id": contract.id,
-                "filename": contract.filename,
+                "filename": contract.original_filename,  # Use original_filename for display
+                "original_filename": contract.original_filename,  # Keep for backward compatibility
                 "supplier_name": supplier_name,
                 "contract_value": contract_value,
                 "tags": [],
@@ -602,7 +605,8 @@ async def execute_search_clauses(
                 
                 matching_contracts.append({
                     "contract_id": contract.id,
-                    "filename": contract.filename,
+                    "filename": contract.original_filename,  # Use original_filename for display
+                    "original_filename": contract.original_filename,  # Keep for backward compatibility
                     "supplier_name": supplier_name,
                     "matches": matches,
                     "match_count": len(matches)
@@ -712,7 +716,8 @@ async def execute_analyze_risk(
             
             risk_analyses.append({
                 "contract_id": contract.id,
-                "filename": contract.filename,
+                "filename": contract.original_filename,  # Use original_filename for display
+                "original_filename": contract.original_filename,  # Keep for backward compatibility
                 "supplier_name": supplier_name,
                 "risk_score": min(risk_score, 100),  # Cap at 100
                 "risk_level": risk_level,
@@ -794,7 +799,8 @@ async def execute_compare_clauses(
             
             clause_analysis = {
                 "contract_id": contract.id,
-                "filename": contract.filename,
+                "filename": contract.original_filename,  # Use original_filename for display
+                "original_filename": contract.original_filename,  # Keep for backward compatibility
                 "supplier_name": supplier_name,
                 "clause_presence": {},
                 "clause_excerpts": {}
@@ -985,7 +991,8 @@ Documents to analyze:
                 if original_doc:
                     rag_doc = {
                         "id": original_doc.id,
-                        "filename": original_doc.filename,
+                        "filename": original_doc.original_filename,  # Use original_filename for display
+                        "original_filename": original_doc.original_filename,  # Keep for backward compatibility
                         "supplier_name": ai_doc.get("supplier_name", "Unknown"),
                         "contract_value": ai_doc.get("contract_value") if ai_doc.get("contract_value") is not None else "Unknown",
                         "tags": [],
@@ -1374,7 +1381,8 @@ DOCUMENTS TO ANALYZE:
                     
                     rag_contract = {
                         "id": original_doc.id,
-                        "filename": original_doc.filename,
+                        "filename": original_doc.original_filename,  # Use original_filename for display
+                        "original_filename": original_doc.original_filename,  # Keep for backward compatibility
                         "supplier_name": ai_doc.get("supplier_name") or "Unknown",
                         "contract_value": contract_value if contract_value is not None else "Unknown",
                         "tags": [],
