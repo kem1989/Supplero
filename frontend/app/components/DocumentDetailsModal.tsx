@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../lib/auth';
 
 interface ContractClause {
@@ -75,16 +76,33 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
-  const [scrollPosition, setScrollPosition] = useState(0);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     if (isOpen && documentId) {
-      // Capture current scroll position when modal opens
-      setScrollPosition(window.scrollY);
       fetchDocumentDetails();
       fetchDocumentAnalysis();
     }
   }, [isOpen, documentId]);
+
+  // Track mount to safely use portals on client only
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Disable background scroll when modal is open
+  useEffect(() => {
+    if (!mounted) return;
+    const originalOverflow = document.body.style.overflow;
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = originalOverflow;
+    }
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, mounted]);
 
   const fetchDocumentDetails = async () => {
     setLoading(true);
@@ -156,10 +174,10 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
     return Math.round(confidence * 100);
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" style={{ top: scrollPosition }}>
+  return createPortal(
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
       <div className="bg-slate-900 rounded-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-slate-700">
@@ -443,6 +461,7 @@ export default function DocumentDetailsModal({ documentId, isOpen, onClose }: Do
           ) : null}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
