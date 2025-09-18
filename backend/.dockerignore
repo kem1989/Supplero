@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.venv/
+.env*
+uploads/
+.git/
+.DS_Store
+*.log
+tests/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.idea/
+**/.vscode/
+
