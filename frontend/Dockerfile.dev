@@ -3,11 +3,20 @@ FROM node:18-alpine
 # Set working directory
 WORKDIR /app
 
+# Accept build args
+ARG NODE_OPTIONS
+ENV NODE_OPTIONS=${NODE_OPTIONS}
+
 # Copy package files first for better caching
 COPY package*.json ./
 
-# Install all dependencies
-RUN npm install && npm cache clean --force
+# Install all dependencies with increased memory and timeout
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm config set fetch-retry-mintimeout 20000 && \
+    npm config set fetch-retry-maxtimeout 120000 && \
+    npm config set fetch-retries 3 && \
+    npm install --maxsockets 1 --network-timeout 300000 --verbose && \
+    npm cache clean --force
 
 # Copy source code
 COPY . .

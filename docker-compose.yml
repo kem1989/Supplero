@@ -13,7 +13,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+      #- ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     networks:
       - supplero-network
     healthcheck:
@@ -85,6 +85,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.dev
+      args:
+        - NODE_OPTIONS=--max-old-space-size=4096
     container_name: supplero-frontend
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000  # For browser requests

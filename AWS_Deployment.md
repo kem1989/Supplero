@@ -125,6 +125,26 @@ sudo apt update && sudo apt upgrade -y
 sudo apt install -y curl wget git nano htop unzip
 ```
 
+
+NB: If you tried installing Docker abnd you get "Failure writing output to destination" error, do this
+
+
+# Check disk space
+```bash
+df -h
+```
+
+Option A: Use /tmp directory (recommended)
+```bash
+cd /tmp
+
+# Try the Docker installation again
+curl -fsSL https://get.docker.com -o get-docker.sh
+
+# If successful, run the script
+sudo sh get-docker.sh
+```
+
 ### 3. Install Docker
 
 ```bash
@@ -157,6 +177,7 @@ sudo ufw --force enable
 
 # Check status
 sudo ufw status
+sudo ufw allow ssh && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw allow 3000 && sudo ufw allow 8000 && sudo ufw --force enable && sudo ufw status
 ```
 
 ## Application Deployment
@@ -165,7 +186,7 @@ sudo ufw status
 
 ```bash
 # Clone your repository
-git clone https://github.com/your-username/Supplero.git
+git clone https://github.com/kem1989/Supplero.git
 cd Supplero
 
 # Or if using SSH
@@ -228,6 +249,8 @@ NEWS_API_KEY=73b1570193ea4621911c859decfda84b
 # Build and start all services
 docker-compose -f docker-compose.testing.yml up -d --build
 
+docker-compose -f docker-compose.yml up -d --build --verbose
+
 # Check status
 docker-compose -f docker-compose.testing.yml ps
 
@@ -241,6 +264,13 @@ docker-compose -f docker-compose.testing.yml logs -f
 # Check if services are running
 docker ps
 
+#Check Logs of Both Backend and Frontend
+# Check backend logs for errors
+docker logs supplero-backend
+
+# Check frontend logs
+docker logs supplero-frontend
+
 # Test backend health
 curl http://localhost:8000/health
 
@@ -249,11 +279,15 @@ curl http://localhost:3000
 
 # Check from outside (replace with your public IP)
 curl http://your-ec2-public-ip:8000/health
+
+curl https://100.26.108.167:8000/health
 ```
 
 ### 5. Access Your Application
 
 - **Frontend**: http://your-ec2-public-ip:3000
+https://100.26.108.167:3000
+
 - **Backend API**: http://your-ec2-public-ip:8000
 - **API Documentation**: http://your-ec2-public-ip:8000/docs
 
