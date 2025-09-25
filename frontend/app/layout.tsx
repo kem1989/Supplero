@@ -3,6 +3,7 @@ import { Inter } from 'next/font/google';
 import './globals.css';
 import { AuthProvider } from './contexts/AuthContext';
 import { TracingProvider } from './contexts/TracingContext';
+import AssistantRoot from './components/assistant/AssistantRoot';
 
 const inter = Inter({ 
   subsets: ['latin'],
@@ -25,6 +26,7 @@ export default function RootLayout({
         <TracingProvider>
           <AuthProvider>
             {children}
+            <AssistantRoot />
           </AuthProvider>
         </TracingProvider>
       </body>

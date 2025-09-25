@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { api } from '../lib/auth';
 import { useAuth } from '../contexts/AuthContext';
@@ -45,6 +46,7 @@ interface SupplierRiskResponse {
 
 export default function SuppliersPage() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState<SupplierCreate>({ name: '' });
   const [creating, setCreating] = useState(false);
   const [createdSupplier, setCreatedSupplier] = useState<SupplierResponse | null>(null);
@@ -109,8 +111,37 @@ export default function SuppliersPage() {
   const fetchSuppliers = async () => {
     try {
       setLoadingList(true);
-      const response = await api.get('/suppliers?page=1&page_size=20');
-      setSuppliers(response.data.suppliers || []);
+      const ids = searchParams.get('ids');
+      const country = searchParams.get('country');
+
+      if (ids) {
+        const idList = ids.split(',').map((v) => v.trim()).filter(Boolean);
+        console.log('Fetching suppliers with IDs:', idList);
+        // Fetch individually and aggregate to preserve accuracy
+        const results: SupplierResponse[] = [];
+        for (const id of idList) {
+          try {
+            console.log(`Fetching supplier ${id}...`);
+            const resp = await api.get(`/suppliers/${id}`);
+            console.log(`Supplier ${id} response:`, resp.data);
+            if (resp.data) {
+              // Backend returns single supplier object, not array
+              results.push(resp.data);
+            }
+          } catch (e) {
+            console.warn(`Failed to fetch supplier ${id}:`, e);
+            // ignore failed ids
+          }
+        }
+        console.log('Final suppliers array:', results);
+        setSuppliers(results);
+      } else if (country) {
+        const response = await api.get(`/suppliers/search?country=${encodeURIComponent(country)}&page=1&page_size=50`);
+        setSuppliers(response.data.suppliers || []);
+      } else {
+        const response = await api.get('/suppliers?page=1&page_size=20');
+        setSuppliers(response.data.suppliers || []);
+      }
     } catch (err: any) {
       console.error('Failed to fetch suppliers:', err);
     } finally {
@@ -120,7 +151,8 @@ export default function SuppliersPage() {
 
   React.useEffect(() => {
     fetchSuppliers();
-  }, []);
+    // re-run when filters change
+  }, [searchParams]);
 
   return (
     <ProtectedRoute>

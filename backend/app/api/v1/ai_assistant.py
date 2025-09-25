@@ -13,11 +13,14 @@ from app.core.database import get_db
 from app.core.logging import get_current_trace_context
 from app.models.user import User
 from app.schemas.ai_assistant import NaturalLanguageQueryRequest, NaturalLanguageQueryResponse, ToolExecutionResponse
+from app.core.tooling.registry import default_tool_registry, ToolSpec
+from app.core.tooling.runner import ToolRunner
 
 # Import the new modular components
 from .ai_assistant_utils.intent_classifier import IntentClassifier, IntentType
 from .ai_assistant_utils.parameter_extractor import ParameterExtractor
 from .ai_assistant_utils.response_formatter import ResponseFormatter
+from .ai_assistant_utils.multi_part_query_processor import MultiPartQueryProcessor
 
 # Import handlers
 from .handlers.contract_handlers import (
@@ -58,6 +61,8 @@ class AIAssistantService:
         self.intent_classifier = IntentClassifier()
         self.parameter_extractor = ParameterExtractor()
         self.response_formatter = ResponseFormatter()
+        self.tool_runner = ToolRunner()
+        self.multi_part_processor = MultiPartQueryProcessor()
         
         # Handler mapping
         self.handlers = {
@@ -86,6 +91,22 @@ class AIAssistantService:
             IntentType.CONTRACTS_BY_SUPPLIER_CRITERIA: execute_suppliers_with_contract_criteria,  # Reuse handler
             IntentType.SUPPLIER_CONTRACT_PORTFOLIO: execute_supplier_contract_portfolio
         }
+
+        # Register handlers in tooling registry (no behavior change; prepares orchestration)
+        for intent, handler in self.handlers.items():
+            try:
+                default_tool_registry.register(
+                    ToolSpec(
+                        name=intent.value,
+                        description=f"Handler for {intent.value.replace('_', ' ').lower()}",
+                        handler=handler,
+                        category="assistant",
+                        required_scopes=["read"],
+                    )
+                )
+            except Exception:
+                # Ignore duplicate registrations on reload
+                pass
     
     async def process_query(
         self,
@@ -95,6 +116,7 @@ class AIAssistantService:
     ) -> Dict[str, Any]:
         """
         Process a natural language query through the complete AI pipeline.
+        Now supports multi-part queries that combine retrieval with explanations/insights.
         
         Args:
             query: Natural language query from user
@@ -114,7 +136,42 @@ class AIAssistantService:
                 organization_id=current_user.organization_id
             )
             
-            # Step 1: Classify intent
+            # Step 1: Try multi-part query processing first (with timeout and error handling)
+            try:
+                import asyncio
+                multi_part_result = await asyncio.wait_for(
+                    self.multi_part_processor.process_multi_part_query(
+                        query, db, current_user, self
+                    ),
+                    timeout=45.0  # 45 second timeout for multi-part queries
+                )
+                
+                if multi_part_result.is_multi_part and multi_part_result.overall_success:
+                    logger.info(
+                        "Multi-part query processed successfully",
+                        components_count=len(multi_part_result.unified_response.get("results", {})),
+                        success=multi_part_result.overall_success
+                    )
+                    return multi_part_result.unified_response
+                else:
+                    logger.info(
+                        "Multi-part processing completed but not successful, falling back to single intent",
+                        is_multi_part=multi_part_result.is_multi_part,
+                        overall_success=multi_part_result.overall_success
+                    )
+                
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Multi-part processing timed out, falling back to single intent"
+                )
+            except Exception as e:
+                logger.warning(
+                    "Multi-part processing failed, falling back to single intent",
+                    error=str(e)
+                )
+            
+            # Step 2: Fall back to single intent processing
+            # Step 2.1: Classify intent
             classification_result = await self.intent_classifier.classify_intent(query)
             
             logger.info(
@@ -124,7 +181,7 @@ class AIAssistantService:
                 reasoning=classification_result.reasoning
             )
             
-            # Step 2: Extract parameters
+            # Step 2.2: Extract parameters
             parameters = await self.parameter_extractor.extract_parameters(
                 query, classification_result.intent
             )
@@ -135,7 +192,7 @@ class AIAssistantService:
                 intent=classification_result.intent.value
             )
             
-            # Step 3: Execute appropriate handler
+            # Step 2.3: Execute appropriate handler
             # Add original query to parameters for RAG semantic search
             parameters["query"] = query
             execution_result = await self._execute_handler(
@@ -145,7 +202,7 @@ class AIAssistantService:
                 current_user
             )
             
-            # Step 4: Format response
+            # Step 2.4: Format response
             processing_time_ms = (time.time() - start_time) * 1000
             
             formatted_response = self.response_formatter.format_response(
@@ -405,7 +462,8 @@ async def ai_assistant_health():
         "status": "healthy",
         "service": "ai-assistant",
         "handlers_loaded": len(ai_service.handlers),
-        "available_intents": [intent.value for intent in ai_service.handlers.keys()]
+        "available_intents": [intent.value for intent in ai_service.handlers.keys()],
+        "registered_tools": len(default_tool_registry.list_tools()),
     }
 
 
@@ -420,4 +478,23 @@ async def get_available_intents():
             }
             for intent in IntentType if intent != IntentType.UNKNOWN
         ]
+    }
+
+
+@router.get("/tools")
+async def list_registered_tools():
+    """List tools registered in the assistant tooling registry"""
+    tools = default_tool_registry.list_tools()
+    return {
+        "tools": [
+            {
+                "name": spec.name,
+                "description": spec.description,
+                "category": spec.category,
+                "required_scopes": spec.required_scopes,
+                "timeout_seconds": spec.timeout_seconds,
+            }
+            for spec in tools.values()
+        ],
+        "total_tools": len(tools),
     }

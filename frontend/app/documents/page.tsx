@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useAuth } from '../contexts/AuthContext';
 import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { api } from '../lib/auth';
@@ -34,9 +35,23 @@ export default function DocumentsPage() {
   const [autoProcessingMessage, setAutoProcessingMessage] = useState<string | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDocumentId, setSelectedDocumentId] = useState<number | null>(null);
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    fetchDocuments();
+    const requestedDocumentId = searchParams.get('documentId');
+    const requestedPage = searchParams.get('page');
+
+    if (requestedDocumentId) {
+      // Show only the requested document
+      fetchSingleDocument(Number(requestedDocumentId)).then((ok) => {
+        if (ok) {
+          setSelectedDocumentId(Number(requestedDocumentId));
+          setShowDetailsModal(true);
+        }
+      });
+    } else {
+      fetchDocuments();
+    }
     
     // Set up polling to refresh documents every 3 seconds when there are processing documents
     // Only poll when there are actually documents being processed
@@ -58,7 +73,7 @@ export default function DocumentsPage() {
     }, 3000);
     
     return () => clearInterval(interval);
-  }, [processingDocuments.size]);
+  }, [processingDocuments.size, searchParams]);
 
   const fetchDocuments = async () => {
     try {
@@ -83,6 +98,42 @@ export default function DocumentsPage() {
     } catch (err: any) {
       console.error('Failed to fetch documents:', err);
       setError('Failed to load documents. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchSingleDocument = async (documentId: number): Promise<boolean> => {
+    try {
+      setLoading(true);
+      const response = await api.get(`/documents/${documentId}`);
+      const doc = response.data;
+      if (doc && doc.document_id) {
+        // Normalize shape to match Document type if needed
+        const normalized: Document = {
+          document_id: doc.document_id,
+          filename: doc.filename || doc.original_filename || `document_${doc.document_id}`,
+          original_filename: doc.original_filename,
+          status: doc.status || 'PROCESSED',
+          document_type: doc.document_type || 'CONTRACT',
+          document_format: doc.document_format || 'pdf',
+          file_size: doc.file_size,
+          confidence_score: doc.confidence_score,
+          ocr_quality_score: doc.ocr_quality_score,
+          created_at: doc.created_at,
+          updated_at: doc.updated_at,
+          processing_error: doc.processing_error,
+          upload_timestamp: doc.upload_timestamp || doc.created_at || new Date().toISOString(),
+        };
+        setDocuments([normalized]);
+        return true;
+      }
+      setDocuments([]);
+      return false;
+    } catch (err) {
+      console.error('Failed to fetch document:', err);
+      setError('Failed to load requested document.');
+      return false;
     } finally {
       setLoading(false);
     }

@@ -280,13 +280,13 @@ curl http://localhost:3000
 # Check from outside (replace with your public IP)
 curl http://your-ec2-public-ip:8000/health
 
-curl https://100.26.108.167:8000/health
+curl http://3.85.10.11:8000/health
 ```
 
 ### 5. Access Your Application
 
 - **Frontend**: http://your-ec2-public-ip:3000
-https://100.26.108.167:3000
+http://3.85.10.11:3000
 
 - **Backend API**: http://your-ec2-public-ip:8000
 - **API Documentation**: http://your-ec2-public-ip:8000/docs

@@ -91,11 +91,9 @@ export default function DashboardPage() {
                 <h1 className="text-xl font-bold text-white">Supplero Dashboard</h1>
                 <nav className="hidden md:flex items-center space-x-2 text-sm text-slate-400">
                   <span>/</span>
-                  <a href="/contract-discovery" className="hover:text-blue-400 transition-colors">Contract Discovery</a>
-                  <span>/</span>
-                  <a href="/suppliers/discovery" className="hover:text-blue-400 transition-colors">Supplier Discovery</a>
-                  <span>/</span>
                   <a href="/documents" className="hover:text-blue-400 transition-colors">Documents</a>
+                  <span>/</span>
+                  <a href="/suppliers" className="hover:text-blue-400 transition-colors">Suppliers</a>
                   <span>/</span>
                   <a href="/audit" className="hover:text-blue-400 transition-colors">Audit</a>
                 </nav>
@@ -137,39 +135,24 @@ export default function DashboardPage() {
           <div className="mb-8">
             <h3 className="text-xl font-bold text-white mb-4">Quick Actions</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <a
-                href="/contract-discovery"
-                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group"
-              >
+              <div className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group">
                 <div className="flex items-center space-x-4">
                   <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
                     <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                     </svg>
                   </div>
                   <div>
-                    <h4 className="text-lg font-semibold text-white">Contract Discovery</h4>
-                    <p className="text-slate-400 text-sm">AI-powered contract search and analysis</p>
+                    <h4 className="text-lg font-semibold text-white">AI Assistant</h4>
+                    <p className="text-slate-400 text-sm">Ask questions about contracts, suppliers, and more</p>
                   </div>
                 </div>
-              </a>
-              
-              <a
-                href="/suppliers/discovery"
-                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300 hover:shadow-lg group"
-              >
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM17 8l4 4-4 4M3 12h18" />
-                    </svg>
-                  </div>
-                  <div>
-                    <h4 className="text-lg font-semibold text-white">Supplier Discovery</h4>
-                    <p className="text-slate-400 text-sm">AI-powered supplier search and intelligence</p>
-                  </div>
+                <div className="mt-4">
+                  <p className="text-xs text-slate-500 mb-2">Try asking:</p>
+                  <p className="text-xs text-blue-400">"Find suppliers in China"</p>
+                  <p className="text-xs text-blue-400">"Show me risky contracts"</p>
                 </div>
-              </a>
+              </div>
               
               <a
                 href="/documents"

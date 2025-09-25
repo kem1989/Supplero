@@ -4,7 +4,7 @@ Intent classification logic for AI Assistant.
 
 import structlog
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
 from enum import Enum
 
@@ -52,6 +52,11 @@ class IntentType(str, Enum):
     PREDICTIVE_RISK_MODELING = "PREDICTIVE_RISK_MODELING"
     INTELLIGENT_RECOMMENDATIONS = "INTELLIGENT_RECOMMENDATIONS"
     
+    # NEW: Multi-part query intents
+    MULTI_PART_QUERY = "MULTI_PART_QUERY"
+    GENERATE_EXPLANATION = "GENERATE_EXPLANATION"
+    GENERATE_INSIGHTS = "GENERATE_INSIGHTS"
+    
     UNKNOWN = "UNKNOWN"
 
 
@@ -60,6 +65,26 @@ class IntentClassificationResult:
     """Result of intent classification"""
     intent: IntentType
     confidence: float
+    reasoning: str
+
+
+@dataclass
+class MultiPartQueryComponent:
+    """Represents a component of a multi-part query"""
+    component_type: str  # "retrieval" or "explanation"
+    intent: IntentType
+    confidence: float
+    reasoning: str
+    query_text: str
+
+
+@dataclass
+class MultiPartQueryResult:
+    """Result of multi-part query decomposition"""
+    is_multi_part: bool
+    components: List[MultiPartQueryComponent]
+    primary_intent: IntentType
+    overall_confidence: float
     reasoning: str
 
 
@@ -141,7 +166,124 @@ class IntentClassifier:
             return IntentClassificationResult(
                 intent=IntentType.UNKNOWN,
                 confidence=0.0,
-                reasoning=f"Classification error: {str(e)}"
+                        reasoning=f"Classification error: {str(e)}"
+            )
+    
+    async def detect_multi_part_query(self, query: str) -> MultiPartQueryResult:
+        """
+        Detect if a query is multi-part and decompose it into components.
+        
+        Args:
+            query: The natural language query to analyze
+            
+        Returns:
+            MultiPartQueryResult with decomposition information
+        """
+        try:
+            system_prompt = self._build_multi_part_detection_prompt()
+            
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {settings.OPENAI_API_KEY}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": settings.OPENAI_MODEL,
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": f"Analyze this query for multi-part components: {query}"}
+                        ],
+                        "temperature": 0.1,
+                        "max_tokens": 500
+                    }
+                )
+                
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result["choices"][0]["message"]["content"]
+                    
+                    # Parse the JSON response
+                    import json
+                    try:
+                        analysis = json.loads(content)
+                        
+                        if analysis.get("is_multi_part", False):
+                            components = []
+                            for comp_data in analysis.get("components", []):
+                                try:
+                                    intent = IntentType(comp_data.get("intent", "UNKNOWN"))
+                                except ValueError:
+                                    intent = IntentType.UNKNOWN
+                                
+                                component = MultiPartQueryComponent(
+                                    component_type=comp_data.get("component_type", "unknown"),
+                                    intent=intent,
+                                    confidence=comp_data.get("confidence", 0.0),
+                                    reasoning=comp_data.get("reasoning", ""),
+                                    query_text=comp_data.get("query_text", "")
+                                )
+                                components.append(component)
+                            
+                            # Determine primary intent (usually the retrieval component)
+                            primary_intent = IntentType.UNKNOWN
+                            for component in components:
+                                if component.component_type == "retrieval":
+                                    primary_intent = component.intent
+                                    break
+                            if primary_intent == IntentType.UNKNOWN and components:
+                                primary_intent = components[0].intent
+                            
+                            return MultiPartQueryResult(
+                                is_multi_part=True,
+                                components=components,
+                                primary_intent=primary_intent,
+                                overall_confidence=analysis.get("overall_confidence", 0.0),
+                                reasoning=analysis.get("reasoning", "")
+                            )
+                        else:
+                            # Single intent query
+                            try:
+                                primary_intent = IntentType(analysis.get("primary_intent", "UNKNOWN"))
+                            except ValueError:
+                                primary_intent = IntentType.UNKNOWN
+                            
+                            return MultiPartQueryResult(
+                                is_multi_part=False,
+                                components=[],
+                                primary_intent=primary_intent,
+                                overall_confidence=analysis.get("confidence", 0.0),
+                                reasoning=analysis.get("reasoning", "")
+                            )
+                            
+                    except json.JSONDecodeError:
+                        logger.warning("Failed to parse multi-part analysis JSON", content=content)
+                        return MultiPartQueryResult(
+                            is_multi_part=False,
+                            components=[],
+                            primary_intent=IntentType.UNKNOWN,
+                            overall_confidence=0.0,
+                            reasoning="Failed to parse analysis response"
+                        )
+                else:
+                    logger.error("OpenAI API error for multi-part detection", status_code=response.status_code, response=response.text)
+                    return MultiPartQueryResult(
+                        is_multi_part=False,
+                        components=[],
+                        primary_intent=IntentType.UNKNOWN,
+                        overall_confidence=0.0,
+                        reasoning="OpenAI API error"
+                    )
+                    
+        except Exception as e:
+            logger.error("Multi-part query detection failed", error=str(e), exc_info=True)
+            return MultiPartQueryResult(
+                is_multi_part=False,
+                components=[],
+                primary_intent=IntentType.UNKNOWN,
+                overall_confidence=0.0,
+                reasoning=f"Detection error: {str(e)}"
             )
     
     def _build_tools_description(self) -> Dict[str, Dict[str, str]]:
@@ -270,4 +412,88 @@ Respond in this exact JSON format:
     "intent": "INTENT_NAME",
     "confidence": 0.95,
     "reasoning": "Brief explanation of why this intent was chosen"
+}}"""
+    
+    def _build_multi_part_detection_prompt(self) -> str:
+        """Build the system prompt for multi-part query detection"""
+        
+        tools_description = "\n".join([
+            f"- {tool['name']}: {tool['description']}"
+            for tool in self.tools.values()
+        ])
+        
+        return f"""You are an AI assistant that analyzes natural language queries to detect multi-part requests that combine data retrieval with explanation or insight generation.
+
+Available intents for classification:
+{tools_description}
+
+Your task is to determine if a query has multiple parts and decompose it into components.
+
+**Multi-Part Query Patterns:**
+1. **Retrieval + Explanation**: "Find contracts with arbitration in Singapore, then explain why contracts use Singapore arbitration"
+2. **Retrieval + Insights**: "Find suppliers in China, and tell me about semiconductor suppliers in China"
+3. **Search + Analysis**: "Show me risky suppliers, then analyze their risk patterns"
+4. **Data + Context**: "Get expiring contracts, then explain renewal best practices"
+
+**Component Types:**
+- **retrieval**: Queries that ask for specific data, contracts, suppliers, or search results
+- **explanation**: Queries that ask for explanations, reasons, or context about retrieved data
+- **insights**: Queries that ask for analysis, trends, or recommendations
+
+**Detection Rules:**
+1. Look for connecting words: "then", "and", "also", "plus", "furthermore", "additionally"
+2. Look for explanation requests: "explain why", "tell me about", "give reasons", "what are the benefits"
+3. Look for insight requests: "analyze", "trends", "recommendations", "insights", "summary"
+
+**Examples:**
+
+Query: "Find me contracts whose arbitration is in Singapore, then give reasons why this type of contracts is governed in Singapore"
+Response:
+{{
+    "is_multi_part": true,
+    "components": [
+        {{
+            "component_type": "retrieval",
+            "intent": "SEARCH_CONTRACTS",
+            "confidence": 0.95,
+            "reasoning": "User wants to find contracts with specific arbitration clause",
+            "query_text": "Find me contracts whose arbitration is in Singapore"
+        }},
+        {{
+            "component_type": "explanation",
+            "intent": "GENERATE_EXPLANATION",
+            "confidence": 0.90,
+            "reasoning": "User wants explanation about Singapore arbitration governance",
+            "query_text": "give reasons why this type of contracts is governed in Singapore"
+        }}
+    ],
+    "primary_intent": "SEARCH_CONTRACTS",
+    "overall_confidence": 0.92,
+    "reasoning": "Query combines data retrieval with explanation request"
+}}
+
+Query: "Find me suppliers in China"
+Response:
+{{
+    "is_multi_part": false,
+    "primary_intent": "SEARCH_SUPPLIERS",
+    "confidence": 0.95,
+    "reasoning": "Single intent query asking for supplier search"
+}}
+
+Respond in this exact JSON format:
+{{
+    "is_multi_part": boolean,
+    "components": [
+        {{
+            "component_type": "retrieval|explanation|insights",
+            "intent": "INTENT_NAME",
+            "confidence": 0.95,
+            "reasoning": "Brief explanation",
+            "query_text": "Extracted query text for this component"
+        }}
+    ],
+    "primary_intent": "INTENT_NAME",
+    "overall_confidence": 0.92,
+    "reasoning": "Overall analysis reasoning"
 }}"""

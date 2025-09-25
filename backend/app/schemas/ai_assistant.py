@@ -222,3 +222,53 @@ class AvailableToolsResponse(BaseModel):
     tools: List[ToolInfo]
     total_tools: int
     categories: Dict[str, List[str]]
+
+
+# Multi-part query schemas
+class RetrievalResult(BaseModel):
+    """Single retrieval result with clickable link"""
+    type: str  # "contract", "supplier", etc.
+    id: int
+    name: str
+    link: str
+    description: str
+    # Additional fields based on type
+    supplier: Optional[str] = None
+    value: Optional[float] = None
+    industry: Optional[str] = None
+    location: Optional[str] = None
+    risk_score: Optional[float] = None
+
+
+class ExplanationResult(BaseModel):
+    """Single explanation result"""
+    title: str
+    content: str
+    confidence: float
+
+
+class InsightResult(BaseModel):
+    """Single insight result"""
+    title: str
+    content: str
+    confidence: float
+
+
+class MultiPartQueryResults(BaseModel):
+    """Results from multi-part query processing"""
+    retrieval: Dict[str, Any]
+    explanations: Dict[str, Any]
+    insights: Dict[str, Any]
+
+
+class MultiPartQueryResponse(BaseModel):
+    """Response schema for multi-part queries"""
+    query: str
+    is_multi_part: bool
+    success: bool
+    timestamp: str
+    execution_time_ms: float
+    intent_classification: Dict[str, Any]
+    results: MultiPartQueryResults
+    summary: Dict[str, Any]
+    error: Optional[str] = None
