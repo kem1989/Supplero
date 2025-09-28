@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.auth import get_current_user, get_current_user_optional
 from app.core.audit import get_audit_service, AuditService
-from app.core.redaction import RedactionLevel
+# Redaction module removed for simplification
 from app.schemas.audit import (
     AuditLogResponse, AIRequestResponse, AuditLogFilter, AuditLogSummary
 )

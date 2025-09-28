@@ -120,38 +120,103 @@ function ResponseView({ result, onClose }: { result: Record<string, any>; onClos
     return <MultiPartResponseView result={result} onClose={onClose} />;
   }
 
-  // Handle single intent responses
-  const message = result?.message || (typeof result?.summary === "string" ? result.summary : null);
-  const items = Array.isArray(result?.items) ? result.items : null;
-  const citations = result?.citations || result?.evidence?.citations || [];
-  const risk = result?.risk_factors || result?.evidence?.risk_factors || [];
-  const contracts = Array.isArray(result?.contracts) ? result.contracts : [];
-  const suppliers = Array.isArray(result?.suppliers) ? result.suppliers : [];
+  // Dynamic response rendering based on content structure
+  return <DynamicResponseRenderer result={result} onClose={onClose} />;
+}
+
+function DynamicResponseRenderer({ result, onClose }: { result: Record<string, any>; onClose: () => void }) {
+  const renderers = [
+    // Primary message
+    () => result?.message && (
+      <div className="text-base text-slate-100 mb-4">{result.message}</div>
+    ),
+    
+    // Summary information
+    () => result?.summary && typeof result.summary === "string" && (
+      <div className="text-sm text-slate-200 mb-4 p-3 bg-slate-900/40 rounded-lg">
+        {result.summary}
+      </div>
+    ),
+    
+    // Analysis summaries (risk, supplier, contract analysis)
+    () => result?.analysis_summary && (
+      <AnalysisSummaryCard data={result.analysis_summary} />
+    ),
+    
+    // Risk distribution
+    () => result?.risk_distribution && (
+      <RiskDistributionCard data={result.risk_distribution} />
+    ),
+    
+    // Risk analyses (detailed risk breakdown)
+    () => result?.risk_analyses && Array.isArray(result.risk_analyses) && (
+      <RiskAnalysesCard data={result.risk_analyses} />
+    ),
+    
+    // Analytics results (generic results array)
+    () => result?.results && Array.isArray(result.results) && (
+      <AnalyticsResultsCard data={result.results} onClose={onClose} />
+    ),
+    
+    // Suppliers data
+    () => result?.suppliers && Array.isArray(result.suppliers) && (
+      <SuppliersCard data={result.suppliers} onClose={onClose} />
+    ),
+    
+    // Contracts data
+    () => result?.contracts && Array.isArray(result.contracts) && (
+      <ContractsCard data={result.contracts} onClose={onClose} />
+    ),
+    
+    // Search insights
+    () => result?.search_insights && (
+      <SearchInsightsCard data={result.search_insights} />
+    ),
+    
+    // Portfolio insights
+    () => result?.insights && (
+      <PortfolioInsightsCard data={result.insights} />
+    ),
+    
+    // Recommendations
+    () => result?.recommendations && Array.isArray(result.recommendations) && (
+      <RecommendationsCard data={result.recommendations} />
+    ),
+    
+    // Citations
+    () => result?.citations && Array.isArray(result.citations) && (
+      <CitationsCard data={result.citations} onClose={onClose} />
+    ),
+    
+    // Generic items list
+    () => result?.items && Array.isArray(result.items) && (
+      <ItemsListCard data={result.items} />
+    ),
+    
+    // Generic data display for any structured data
+    () => result && typeof result === 'object' && !Array.isArray(result) && (
+      <GenericDataCard data={result} />
+    ),
+    
+    // Fallback: show raw data for debugging
+    () => (
+      <div className="text-xs bg-slate-900/50 border p-3 rounded-md overflow-x-auto text-slate-200">
+        <details>
+          <summary className="cursor-pointer text-slate-400 hover:text-slate-200">
+            Raw Response Data
+          </summary>
+          <pre className="mt-2">{JSON.stringify(result, null, 2)}</pre>
+        </details>
+      </div>
+    )
+  ];
 
   return (
     <div className="space-y-4">
-      {message && <div className="text-base text-slate-100">{message}</div>}
-      {items && items.length > 0 && (
-        <ul className="list-disc pl-6 text-sm text-slate-200">
-          {items.map((it: any, idx: number) => (
-            <li key={idx}>{typeof it === "string" ? it : JSON.stringify(it)}</li>
-          ))}
-        </ul>
-      )}
-             <LinkedResults contracts={contracts} suppliers={suppliers} onClose={onClose} />
-      <div className="grid md:grid-cols-2 gap-4">
-        <div>
-          <h4 className="font-medium text-sm mb-1 text-slate-200">Citations</h4>
-          <CitationList citations={citations} onClose={onClose} />
-        </div>
-        <div>
-          <h4 className="font-medium text-sm mb-1 text-slate-200">Risk Factors</h4>
-          <RiskList factors={risk} />
-        </div>
-      </div>
-      {!message && !items && (
-        <pre className="text-xs bg-slate-900/50 border p-3 rounded-md overflow-x-auto text-slate-200">{JSON.stringify(result, null, 2)}</pre>
-      )}
+      {renderers.map((renderer, index) => {
+        const content = renderer();
+        return content ? <div key={index}>{content}</div> : null;
+      })}
     </div>
   );
 }
@@ -283,8 +348,304 @@ function CitationList({ citations, onClose }: { citations: any[]; onClose: () =>
   );
 }
 
+// Card Components for different data types
+function AnalysisSummaryCard({ data }: { data: any }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Analysis Summary</h4>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        {Object.entries(data).map(([key, value]) => (
+          <div key={key}>
+            <div className="text-slate-400 capitalize">{key.replace(/_/g, ' ')}</div>
+            <div className="text-slate-200 font-medium">
+              {Array.isArray(value) ? value.join(", ") : String(value)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function RiskDistributionCard({ data }: { data: any }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Risk Distribution</h4>
+      <div className="grid grid-cols-3 gap-4 text-sm">
+        <div className="text-center">
+          <div className="text-slate-400">High Risk</div>
+          <div className="text-red-400 font-medium text-lg">{data.high_risk || 0}</div>
+        </div>
+        <div className="text-center">
+          <div className="text-slate-400">Medium Risk</div>
+          <div className="text-yellow-400 font-medium text-lg">{data.medium_risk || 0}</div>
+        </div>
+        <div className="text-center">
+          <div className="text-slate-400">Low Risk</div>
+          <div className="text-green-400 font-medium text-lg">{data.low_risk || 0}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RiskAnalysesCard({ data }: { data: any[] }) {
+  return (
+    <div className="space-y-4">
+      <h4 className="font-medium text-slate-200">Risk Analysis</h4>
+      {data.map((analysis, i) => (
+        <div key={i} className="border rounded-lg p-4 bg-slate-900/40">
+          <div className="font-medium text-slate-200 mb-3">
+            {analysis.supplier_name} - Risk Score: {analysis.current_risk_score} ({analysis.current_risk_level})
+          </div>
+          {analysis.risk_factors && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {Object.entries(analysis.risk_factors).map(([category, data]: [string, any]) => (
+                <div key={category} className="text-xs border rounded p-2 bg-slate-800/50">
+                  <div className="font-medium text-slate-200 capitalize">{category}</div>
+                  <div className="text-slate-300">Score: {data.score}</div>
+                  {data.notes && <div className="text-slate-400 mt-1">{data.notes}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SuppliersCard({ data, onClose }: { data: any[]; onClose: () => void }) {
+  return (
+    <div className="space-y-3">
+      <h4 className="font-medium text-slate-200">Suppliers</h4>
+      <div className="space-y-2">
+        {data.map((supplier, idx) => (
+          <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-slate-200">{supplier.name}</div>
+                <div className="text-sm text-slate-400">
+                  {supplier.industry} • {supplier.country} • Risk: {supplier.risk_score} ({supplier.risk_level})
+                </div>
+              </div>
+              <DeepLink 
+                label="View" 
+                href={buildSupplierHref(supplier.id)} 
+                onClose={onClose} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AnalyticsResultsCard({ data, onClose }: { data: any[]; onClose: () => void }) {
+  if (!data || data.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h4 className="font-medium text-slate-200">Analytics Results</h4>
+        <div className="text-sm text-slate-400 p-3 bg-slate-900/40 rounded-lg">
+          No results found for this analytics query.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h4 className="font-medium text-slate-200">Analytics Results</h4>
+      <div className="space-y-2">
+        {data.map((result, idx) => (
+          <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
+            <div className="space-y-2">
+              {Object.entries(result).map(([key, value]) => (
+                <div key={key} className="flex justify-between">
+                  <span className="text-sm text-slate-400 capitalize">
+                    {key.replace(/_/g, ' ')}:
+                  </span>
+                  <span className="text-sm text-slate-200">
+                    {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ContractsCard({ data, onClose }: { data: any[]; onClose: () => void }) {
+  return (
+    <div className="space-y-3">
+      <h4 className="font-medium text-slate-200">Contracts</h4>
+      <div className="space-y-2">
+        {data.map((contract, idx) => (
+          <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="font-medium text-slate-200">{contract.title || contract.name}</div>
+                <div className="text-sm text-slate-400">
+                  {contract.type} • {contract.status} • Value: {contract.contract_value || 'N/A'}
+                </div>
+              </div>
+              <DeepLink 
+                label="View" 
+                href={buildDocumentHref(contract.id)} 
+                onClose={onClose} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SearchInsightsCard({ data }: { data: any }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Search Insights</h4>
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+        {Object.entries(data).map(([key, value]) => (
+          <div key={key}>
+            <div className="text-slate-400 capitalize">{key.replace(/_/g, ' ')}</div>
+            <div className="text-slate-200 font-medium">
+              {Array.isArray(value) ? value.join(", ") : String(value)}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PortfolioInsightsCard({ data }: { data: any }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Portfolio Insights</h4>
+      <div className="space-y-3">
+        {data.portfolio_insights && Array.isArray(data.portfolio_insights) && (
+          <div>
+            <h5 className="text-sm font-medium text-slate-300 mb-2">Key Insights</h5>
+            {data.portfolio_insights.map((insight: any, idx: number) => (
+              <div key={idx} className="text-sm text-slate-200 mb-2 p-2 bg-slate-800/50 rounded">
+                <div className="font-medium">{insight.title}</div>
+                <div className="text-slate-300">{insight.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
+        {data.recommendations && Array.isArray(data.recommendations) && (
+          <div>
+            <h5 className="text-sm font-medium text-slate-300 mb-2">Recommendations</h5>
+            <ul className="space-y-1">
+              {data.recommendations.map((rec: string, idx: number) => (
+                <li key={idx} className="text-sm text-slate-200">• {rec}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RecommendationsCard({ data }: { data: string[] }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Recommendations</h4>
+      <ul className="space-y-2">
+        {data.map((rec, idx) => (
+          <li key={idx} className="text-sm text-slate-200 flex items-start">
+            <span className="text-blue-400 mr-2">•</span>
+            {rec}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function CitationsCard({ data, onClose }: { data: any[]; onClose: () => void }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Citations</h4>
+      <div className="space-y-2">
+        {data.map((citation, idx) => (
+          <div key={idx} className="text-xs border rounded p-2 bg-slate-800/50">
+            <div className="font-medium text-slate-200">
+              {citation.clause_type || "Clause"} • Doc {citation.document_id} • Pg {citation.page}
+            </div>
+            {citation.text && <div className="text-slate-300 mt-1 line-clamp-3">{citation.text}</div>}
+            {citation.confidence != null && (
+              <div className="text-slate-400 mt-1">
+                Confidence: {Math.round((citation.confidence || 0) * 100) / 100}
+              </div>
+            )}
+            <div className="mt-2">
+              <DeepLink 
+                label="View in Documents" 
+                href={buildDocumentHref(citation?.document_id, citation?.page)} 
+                onClose={onClose} 
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ItemsListCard({ data }: { data: any[] }) {
+  return (
+    <div className="border rounded-lg p-4 bg-slate-900/40">
+      <h4 className="font-medium text-slate-200 mb-3">Items</h4>
+      <ul className="space-y-2">
+        {data.map((item, idx) => (
+          <li key={idx} className="text-sm text-slate-200">
+            {typeof item === "string" ? item : JSON.stringify(item)}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function RiskList({ factors }: { factors: any[] }) {
   if (!Array.isArray(factors) || factors.length === 0) return <div className="text-xs text-slate-400">None</div>;
+  
+  // Handle risk_analyses structure
+  if (factors.length > 0 && factors[0]?.supplier_name) {
+    return (
+      <div className="space-y-4">
+        {factors.map((analysis, i) => (
+          <div key={i} className="border rounded-lg p-4 bg-slate-900/40">
+            <div className="font-medium text-slate-200 mb-3">
+              {analysis.supplier_name} - Risk Score: {analysis.current_risk_score} ({analysis.current_risk_level})
+            </div>
+            {analysis.risk_factors && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {Object.entries(analysis.risk_factors).map(([category, data]: [string, any]) => (
+                  <div key={category} className="text-xs border rounded p-2 bg-slate-800/50">
+                    <div className="font-medium text-slate-200 capitalize">{category}</div>
+                    <div className="text-slate-300">Score: {data.score}</div>
+                    {data.notes && <div className="text-slate-400 mt-1">{data.notes}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  
+  // Handle original risk factors structure
   return (
     <ul className="space-y-2">
       {factors.map((f, i) => (
@@ -368,6 +729,102 @@ function buildSupplierHref(id?: string | number) {
   const params = new URLSearchParams();
   params.set("ids", String(id));
   return `/suppliers?${params.toString()}`;
+}
+
+function GenericDataCard({ data }: { data: Record<string, any> }) {
+  // Filter out common metadata fields that don't need to be displayed
+  const excludeFields = [
+    'query', 'intent', 'processing_time_ms', 'timestamp', 'success', 
+    'parameters_used', 'performance_met', 'search_strategy', 'search_method',
+    'sql_query', 'query_confidence', 'query_complexity', 'search_performance',
+    'intent_classification', 'helpful_suggestions', 'api_credit_usage', 
+    'complexity_analysis', 'message', 'summary', 'total_found'
+  ];
+
+  const filteredData = Object.entries(data).filter(([key]) => !excludeFields.includes(key));
+
+  if (filteredData.length === 0) {
+    return (
+      <div className="space-y-3">
+        <h4 className="font-medium text-slate-200">Query Results</h4>
+        <div className="text-sm text-slate-400 p-3 bg-slate-900/40 rounded-lg">
+          Query completed successfully. No additional data to display.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <h4 className="font-medium text-slate-200">Query Results</h4>
+      <div className="space-y-2">
+        {filteredData.map(([key, value], idx) => (
+          <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
+            <div className="space-y-2">
+              {(() => {
+                if (Array.isArray(value)) {
+                  return (
+                    <div>
+                      <div className="text-sm font-medium text-slate-300 mb-2 capitalize">
+                        {key.replace(/_/g, ' ')} ({value.length} items)
+                      </div>
+                      {value.length > 0 ? (
+                        <div className="space-y-1">
+                          {value.slice(0, 3).map((item, itemIdx) => (
+                            <div key={itemIdx} className="text-xs text-slate-400">
+                              {typeof item === 'object' ? JSON.stringify(item) : String(item)}
+                            </div>
+                          ))}
+                          {value.length > 3 && (
+                            <div className="text-xs text-slate-500">
+                              ... and {value.length - 3} more items
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="text-xs text-slate-500">No items</div>
+                      )}
+                    </div>
+                  );
+                } else if (typeof value === 'object' && value !== null) {
+                  return (
+                    <div>
+                      <div className="text-sm font-medium text-slate-300 mb-2 capitalize">
+                        {key.replace(/_/g, ' ')}
+                      </div>
+                      <div className="space-y-1">
+                        {Object.entries(value).map(([subKey, subValue]) => (
+                          <div key={subKey} className="flex justify-between text-xs">
+                            <span className="text-slate-400 capitalize">
+                              {subKey.replace(/_/g, ' ')}:
+                            </span>
+                            <span className="text-slate-200">
+                              {typeof subValue === 'number' ? subValue.toFixed(2) : String(subValue)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-slate-400 capitalize">
+                        {key.replace(/_/g, ' ')}:
+                      </span>
+                      <span className="text-sm text-slate-200">
+                        {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                      </span>
+                    </div>
+                  );
+                }
+              })()}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 

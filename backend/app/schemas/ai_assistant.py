@@ -9,25 +9,36 @@ from enum import Enum
 
 
 class IntentType(str, Enum):
-    """Supported intent types for natural language queries"""
-    SEARCH_CONTRACTS = "SEARCH_CONTRACTS"
-    SEARCH_CLAUSES = "SEARCH_CLAUSES"
-    ANALYZE_RISK = "ANALYZE_RISK"
-    COMPARE_CLAUSES = "COMPARE_CLAUSES"
-    GET_DETAILS = "GET_DETAILS"
-    EXPORT = "EXPORT"
-    # Supplier-specific intents
-    SEARCH_SUPPLIERS = "SEARCH_SUPPLIERS"
-    ANALYZE_SUPPLIER_RISK = "ANALYZE_SUPPLIER_RISK"
-    COMPARE_SUPPLIERS = "COMPARE_SUPPLIERS"
-    SUPPLIER_INSIGHTS = "SUPPLIER_INSIGHTS"
-    # Cross-system intents
-    SUPPLIERS_WITH_RISKY_CONTRACTS = "SUPPLIERS_WITH_RISKY_CONTRACTS"
-    SUPPLIERS_WITH_EXPIRING_CONTRACTS = "SUPPLIERS_WITH_EXPIRING_CONTRACTS"
-    SUPPLIERS_BY_CONTRACT_CLAUSES = "SUPPLIERS_BY_CONTRACT_CLAUSES"
-    CONTRACTS_BY_SUPPLIER_RISK = "CONTRACTS_BY_SUPPLIER_RISK"
-    UNIFIED_RISK_SEARCH = "UNIFIED_RISK_SEARCH"
+    """Simplified intent types for natural language to SQL conversion"""
+    
+    # Core SQL-based intents - all queries go through SQL generation
+    SQL_QUERY = "SQL_QUERY"  # Generic SQL query for any data request
+    SQL_ANALYTICS = "SQL_ANALYTICS"  # Analytics and reporting queries
+    SQL_COMPLEX_QUERY = "SQL_COMPLEX_QUERY"  # Complex cross-system queries
+    
+    # Specialized intents for better SQL generation context
+    CONTRACT_QUERY = "CONTRACT_QUERY"  # Contract-related queries
+    # SUPPLIER_QUERY removed - now handled by SQL_QUERY
+    RISK_ANALYSIS = "RISK_ANALYSIS"  # Risk analysis queries
+    COMPARISON_QUERY = "COMPARISON_QUERY"  # Comparison queries
+    
+    # Multi-part query intents (simplified)
+    GENERATE_EXPLANATION = "GENERATE_EXPLANATION"
+    GENERATE_INSIGHTS = "GENERATE_INSIGHTS"
+    
     UNKNOWN = "UNKNOWN"
+
+
+class APICreditUsage(BaseModel):
+    """API credit usage information"""
+    model_config = {"protected_namespaces": ()}
+    
+    model_name: Optional[str] = None
+    prompt_tokens: Optional[int] = None
+    completion_tokens: Optional[int] = None
+    total_tokens: Optional[int] = None
+    cost_usd: Optional[float] = None
+    processing_time_ms: Optional[int] = None
 
 
 class NaturalLanguageQueryRequest(BaseModel):
@@ -63,116 +74,25 @@ class UnifiedQueryResponse(BaseModel):
     execution_result: Dict[str, Any]
     execution_time_ms: float
     performance_met: bool
+    api_credit_usage: Optional[APICreditUsage] = None
 
 
-# Supplier-specific query schemas
-class SupplierSearchQueryRequest(BaseModel):
-    """Request schema for supplier search queries"""
-    query: str = Field(..., description="Natural language supplier search query")
-    filters: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional filters")
+# Simplified SQL-based query schemas
+class SQLQueryRequest(BaseModel):
+    """Request schema for SQL-based queries"""
+    query: str = Field(..., description="Natural language query")
+    context: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Additional context")
 
 
-class SupplierSearchResult(BaseModel):
-    """Single supplier search result"""
-    id: int
-    name: str
-    industry: Optional[str] = None
-    location: Optional[str] = None
-    country: Optional[str] = None
-    risk_score: float
-    risk_level: str
-    company_size: Optional[str] = None
-    is_watchlisted: bool
-    is_active: bool
-    last_risk_assessment: Optional[datetime] = None
-
-
-class SupplierSearchResponse(BaseModel):
-    """Response schema for supplier search"""
+class SQLQueryResponse(BaseModel):
+    """Response schema for SQL-based queries"""
     message: str
-    parameters_used: Dict[str, Any]
-    filters_applied: List[str]
-    suppliers: List[SupplierSearchResult]
-    total_count: int
-    performance_met: bool
-
-
-class SupplierRiskAnalysisRequest(BaseModel):
-    """Request schema for supplier risk analysis"""
-    query: str = Field(..., description="Natural language risk analysis query")
-    supplier_ids: Optional[List[int]] = Field(default=None, description="Specific supplier IDs to analyze")
-    include_enhanced: bool = Field(default=False, description="Include enhanced risk analysis with external data")
-
-
-class SupplierRiskAnalysisResult(BaseModel):
-    """Single supplier risk analysis result"""
-    supplier_id: int
-    supplier_name: str
-    current_risk_score: float
-    new_risk_score: float
-    risk_level: str
-    risk_factors: Dict[str, Any]
-    recommendations: List[str]
-    analysis_method: str
-
-
-class SupplierRiskAnalysisResponse(BaseModel):
-    """Response schema for supplier risk analysis"""
-    message: str
-    parameters_used: Dict[str, Any]
-    risk_analyses: List[SupplierRiskAnalysisResult]
-    analysis_summary: Dict[str, Any]
-    performance_met: bool
-
-
-class SupplierComparisonRequest(BaseModel):
-    """Request schema for supplier comparison"""
-    query: str = Field(..., description="Natural language comparison query")
-    supplier_ids: Optional[List[int]] = Field(default=None, description="Specific supplier IDs to compare")
-    comparison_criteria: Optional[List[str]] = Field(default=None, description="Criteria for comparison")
-
-
-class SupplierComparisonData(BaseModel):
-    """Single supplier comparison data"""
-    supplier_id: int
-    name: str
-    industry: Optional[str] = None
-    location: Optional[str] = None
-    country: Optional[str] = None
-    risk_score: float
-    risk_level: str
-    company_size: Optional[str] = None
-    employee_count: Optional[int] = None
-    revenue_range: Optional[str] = None
-    is_watchlisted: bool
-    last_risk_assessment: Optional[datetime] = None
-
-
-class SupplierComparisonResponse(BaseModel):
-    """Response schema for supplier comparison"""
-    message: str
-    parameters_used: Dict[str, Any]
-    comparison_data: List[SupplierComparisonData]
-    comparison_insights: List[str]
-    comparison_criteria: List[str]
-    performance_met: bool
-
-
-class SupplierInsightsRequest(BaseModel):
-    """Request schema for supplier insights"""
-    query: str = Field(..., description="Natural language insights query")
-    insight_type: Optional[str] = Field(default="portfolio_overview", description="Type of insights to generate")
-    time_period: Optional[str] = Field(default=None, description="Time period for analysis")
-
-
-class SupplierInsightsResponse(BaseModel):
-    """Response schema for supplier insights"""
-    message: str
-    parameters_used: Dict[str, Any]
-    insight_type: str
-    insights: Dict[str, Any]
-    recommendations: List[str]
-    data_quality: Dict[str, Any]
+    results: List[Dict[str, Any]]
+    total_found: int
+    sql_query: str
+    query_confidence: float
+    query_complexity: str
+    execution_time_ms: float
     performance_met: bool
 
 
@@ -190,6 +110,7 @@ class ToolExecutionResponse(BaseModel):
     execution_time_ms: float
     performance_met: bool
     error_message: Optional[str] = None
+    api_credit_usage: Optional[APICreditUsage] = None
 
 
 # Query intent and classification schemas
@@ -224,43 +145,7 @@ class AvailableToolsResponse(BaseModel):
     categories: Dict[str, List[str]]
 
 
-# Multi-part query schemas
-class RetrievalResult(BaseModel):
-    """Single retrieval result with clickable link"""
-    type: str  # "contract", "supplier", etc.
-    id: int
-    name: str
-    link: str
-    description: str
-    # Additional fields based on type
-    supplier: Optional[str] = None
-    value: Optional[float] = None
-    industry: Optional[str] = None
-    location: Optional[str] = None
-    risk_score: Optional[float] = None
-
-
-class ExplanationResult(BaseModel):
-    """Single explanation result"""
-    title: str
-    content: str
-    confidence: float
-
-
-class InsightResult(BaseModel):
-    """Single insight result"""
-    title: str
-    content: str
-    confidence: float
-
-
-class MultiPartQueryResults(BaseModel):
-    """Results from multi-part query processing"""
-    retrieval: Dict[str, Any]
-    explanations: Dict[str, Any]
-    insights: Dict[str, Any]
-
-
+# Multi-part query schemas (simplified)
 class MultiPartQueryResponse(BaseModel):
     """Response schema for multi-part queries"""
     query: str
@@ -269,6 +154,6 @@ class MultiPartQueryResponse(BaseModel):
     timestamp: str
     execution_time_ms: float
     intent_classification: Dict[str, Any]
-    results: MultiPartQueryResults
+    results: Dict[str, Any]
     summary: Dict[str, Any]
     error: Optional[str] = None

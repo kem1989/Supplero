@@ -14,48 +14,22 @@ logger = structlog.get_logger(__name__)
 
 
 class IntentType(str, Enum):
-    """Available intent types for natural language queries"""
-    # Contract-related intents
-    SEARCH_CONTRACTS = "SEARCH_CONTRACTS"
-    SEARCH_CLAUSES = "SEARCH_CLAUSES"
-    ANALYZE_RISK = "ANALYZE_RISK"
-    COMPARE_CLAUSES = "COMPARE_CLAUSES"
-    GET_DETAILS = "GET_DETAILS"
-    EXPORT = "EXPORT"
+    """Simplified intent types for natural language to SQL conversion - v2.0"""
     
-    # Supplier-related intents
-    SEARCH_SUPPLIERS = "SEARCH_SUPPLIERS"
-    ANALYZE_SUPPLIER_RISK = "ANALYZE_SUPPLIER_RISK"
-    COMPARE_SUPPLIERS = "COMPARE_SUPPLIERS"
-    SUPPLIER_INSIGHTS = "SUPPLIER_INSIGHTS"
+    # Primary data retrieval intent
+    SQL_QUERY = "SQL_QUERY"  # Standard data retrieval queries
     
-    # Cross-system intents
-    SUPPLIERS_WITH_RISKY_CONTRACTS = "SUPPLIERS_WITH_RISKY_CONTRACTS"
-    SUPPLIERS_WITH_EXPIRING_CONTRACTS = "SUPPLIERS_WITH_EXPIRING_CONTRACTS"
-    SUPPLIERS_BY_CONTRACT_CLAUSES = "SUPPLIERS_BY_CONTRACT_CLAUSES"
-    CONTRACTS_BY_SUPPLIER_RISK = "CONTRACTS_BY_SUPPLIER_RISK"
-    UNIFIED_RISK_SEARCH = "UNIFIED_RISK_SEARCH"
-    SUPPLIERS_BY_SEMANTIC_CONTRACTS = "SUPPLIERS_BY_SEMANTIC_CONTRACTS"
+    # Analytical queries with aggregations and calculations
+    SQL_ANALYTICS = "SQL_ANALYTICS"  # Analytics, reporting, aggregations, statistics
     
-    # NEW: Enhanced supplier-contract relationship intents
-    SUPPLIERS_BY_CONTRACT_VALUE = "SUPPLIERS_BY_CONTRACT_VALUE"
-    SUPPLIERS_WITH_CONTRACT_CRITERIA = "SUPPLIERS_WITH_CONTRACT_CRITERIA"
-    CONTRACTS_BY_SUPPLIER_CRITERIA = "CONTRACTS_BY_SUPPLIER_CRITERIA"
-    SUPPLIER_CONTRACT_PORTFOLIO = "SUPPLIER_CONTRACT_PORTFOLIO"
+    # Comparative analysis between entities
+    COMPARISON_QUERY = "COMPARISON_QUERY"  # Side-by-side comparisons, benchmarking
     
-    # Enhanced intelligence intents
-    PORTFOLIO_RISK_ANALYSIS = "PORTFOLIO_RISK_ANALYSIS"
-    GEOGRAPHIC_RISK_CLUSTERING = "GEOGRAPHIC_RISK_CLUSTERING"
-    INDUSTRY_RISK_CLUSTERING = "INDUSTRY_RISK_CLUSTERING"
-    CONTRACT_IMPACT_ASSESSMENT = "CONTRACT_IMPACT_ASSESSMENT"
-    SUPPLIER_TREND_ANALYSIS = "SUPPLIER_TREND_ANALYSIS"
-    PREDICTIVE_RISK_MODELING = "PREDICTIVE_RISK_MODELING"
-    INTELLIGENT_RECOMMENDATIONS = "INTELLIGENT_RECOMMENDATIONS"
+    # Explanatory content based on data analysis
+    GENERATE_EXPLANATION = "GENERATE_EXPLANATION"  # Contextual explanations, reasoning
     
-    # NEW: Multi-part query intents
-    MULTI_PART_QUERY = "MULTI_PART_QUERY"
-    GENERATE_EXPLANATION = "GENERATE_EXPLANATION"
-    GENERATE_INSIGHTS = "GENERATE_INSIGHTS"
+    # Strategic insights and recommendations
+    GENERATE_INSIGHTS = "GENERATE_INSIGHTS"  # Business intelligence, recommendations
     
     UNKNOWN = "UNKNOWN"
 
@@ -66,6 +40,7 @@ class IntentClassificationResult:
     intent: IntentType
     confidence: float
     reasoning: str
+    context_parameters: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -76,6 +51,7 @@ class MultiPartQueryComponent:
     confidence: float
     reasoning: str
     query_text: str
+    context_parameters: Optional[Dict[str, Any]] = None
 
 
 @dataclass
@@ -144,7 +120,8 @@ class IntentClassifier:
                         return IntentClassificationResult(
                             intent=intent,
                             confidence=classification.get("confidence", 0.0),
-                            reasoning=classification.get("reasoning", "No reasoning provided")
+                            reasoning=classification.get("reasoning", "No reasoning provided"),
+                            context_parameters=classification.get("context_parameters")
                         )
                     except json.JSONDecodeError:
                         logger.warning("Failed to parse classification JSON", content=content)
@@ -222,7 +199,8 @@ class IntentClassifier:
                                     intent=intent,
                                     confidence=comp_data.get("confidence", 0.0),
                                     reasoning=comp_data.get("reasoning", ""),
-                                    query_text=comp_data.get("query_text", "")
+                                    query_text=comp_data.get("query_text", ""),
+                                    context_parameters=comp_data.get("context_parameters")
                                 )
                                 components.append(component)
                             
@@ -287,135 +265,122 @@ class IntentClassifier:
             )
     
     def _build_tools_description(self) -> Dict[str, Dict[str, str]]:
-        """Build the tools description for intent classification"""
+        """Build the simplified tools description for SQL-based intent classification v2.0"""
         return {
-            "SEARCH_CONTRACTS": {
-                "name": "SEARCH_CONTRACTS",
-                "description": "Search for contracts by supplier, value, date, or tags"
+            "SQL_QUERY": {
+                "name": "SQL_QUERY",
+                "description": "Standard data retrieval queries - covers simple to moderately complex SELECT operations"
             },
-            "SEARCH_CLAUSES": {
-                "name": "SEARCH_CLAUSES", 
-                "description": "Search for specific clauses or terms within contracts"
+            "SQL_ANALYTICS": {
+                "name": "SQL_ANALYTICS",
+                "description": "Analytical queries with aggregations, calculations, and reporting - mathematical operations, grouping, trends, statistical analysis"
             },
-            "ANALYZE_RISK": {
-                "name": "ANALYZE_RISK",
-                "description": "Analyze contract risk factors and compliance issues"
+            "COMPARISON_QUERY": {
+                "name": "COMPARISON_QUERY",
+                "description": "Comparative analysis between entities - side-by-side comparisons, benchmarking, difference analysis"
             },
-            "COMPARE_CLAUSES": {
-                "name": "COMPARE_CLAUSES",
-                "description": "Compare clauses across multiple contracts"
+            "GENERATE_EXPLANATION": {
+                "name": "GENERATE_EXPLANATION",
+                "description": "Explanatory content based on data analysis - contextual explanations, reasoning, educational responses about data"
             },
-            "GET_DETAILS": {
-                "name": "GET_DETAILS",
-                "description": "Get detailed information about a specific contract"
-            },
-            "EXPORT": {
-                "name": "EXPORT",
-                "description": "Export contract data in various formats"
-            },
-            "SEARCH_SUPPLIERS": {
-                "name": "SEARCH_SUPPLIERS",
-                "description": "Search for suppliers by name, industry, location, or risk level"
-            },
-            "ANALYZE_SUPPLIER_RISK": {
-                "name": "ANALYZE_SUPPLIER_RISK",
-                "description": "Analyze supplier risk factors and assessment history"
-            },
-            "COMPARE_SUPPLIERS": {
-                "name": "COMPARE_SUPPLIERS",
-                "description": "Compare multiple suppliers across various criteria"
-            },
-            "SUPPLIER_INSIGHTS": {
-                "name": "SUPPLIER_INSIGHTS",
-                "description": "Generate insights, trends, and recommendations about suppliers"
-            },
-            "SUPPLIERS_WITH_RISKY_CONTRACTS": {
-                "name": "SUPPLIERS_WITH_RISKY_CONTRACTS",
-                "description": "Find suppliers that have risky contracts"
-            },
-            "SUPPLIERS_WITH_EXPIRING_CONTRACTS": {
-                "name": "SUPPLIERS_WITH_EXPIRING_CONTRACTS",
-                "description": "Find suppliers with contracts expiring soon"
-            },
-            "SUPPLIERS_BY_CONTRACT_CLAUSES": {
-                "name": "SUPPLIERS_BY_CONTRACT_CLAUSES",
-                "description": "Find suppliers based on specific contract clause types"
-            },
-            "CONTRACTS_BY_SUPPLIER_RISK": {
-                "name": "CONTRACTS_BY_SUPPLIER_RISK",
-                "description": "Find contracts based on supplier risk levels"
-            },
-            "UNIFIED_RISK_SEARCH": {
-                "name": "UNIFIED_RISK_SEARCH",
-                "description": "Comprehensive risk analysis across suppliers and contracts"
-            },
-            "SUPPLIERS_BY_SEMANTIC_CONTRACTS": {
-                "name": "SUPPLIERS_BY_SEMANTIC_CONTRACTS",
-                "description": "Find suppliers based on semantic analysis of contract content (RAG)"
-            },
-            "SUPPLIERS_BY_CONTRACT_VALUE": {
-                "name": "SUPPLIERS_BY_CONTRACT_VALUE",
-                "description": "Find suppliers based on the value of contracts they have"
-            },
-            "SUPPLIERS_WITH_CONTRACT_CRITERIA": {
-                "name": "SUPPLIERS_WITH_CONTRACT_CRITERIA",
-                "description": "Find suppliers that meet specific contract criteria"
-            },
-            "CONTRACTS_BY_SUPPLIER_CRITERIA": {
-                "name": "CONTRACTS_BY_SUPPLIER_CRITERIA",
-                "description": "Find contracts that meet specific supplier criteria"
-            },
-            "SUPPLIER_CONTRACT_PORTFOLIO": {
-                "name": "SUPPLIER_CONTRACT_PORTFOLIO",
-                "description": "Get a portfolio of contracts for a specific supplier"
+            "GENERATE_INSIGHTS": {
+                "name": "GENERATE_INSIGHTS",
+                "description": "Strategic insights, recommendations, and actionable intelligence - business intelligence, trend interpretation, strategic recommendations"
             }
         }
     
     def _build_intent_classification_prompt(self) -> str:
-        """Build the system prompt for intent classification"""
+        """Build the simplified system prompt for SQL-based intent classification v2.0"""
         tools_description = "\n".join([
             f"- {tool['name']}: {tool['description']}"
             for tool in self.tools.values()
         ])
         
-        return f"""You are an AI assistant that classifies natural language queries into specific intents for a contract and supplier management system.
+        return f"""You are an AI assistant that classifies natural language queries into specific intents for a contract and supplier management system that uses SQL generation.
 
 Available intents:
 {tools_description}
 
 Your task is to classify the user's query into one of these intents with a confidence score (0.0 to 1.0).
 
-Key Classification Rules:
+**Primary Decision Flow:**
+1. **Asking for explanations or reasoning?** → `GENERATE_EXPLANATION`
+2. **Asking for insights, recommendations, or strategy?** → `GENERATE_INSIGHTS`
+3. **Explicitly comparing multiple entities?** → `COMPARISON_QUERY`
+4. **Involves calculations, aggregations, or statistics?** → `SQL_ANALYTICS`
+5. **Standard data retrieval request?** → `SQL_QUERY`
 
-**Contract-Related Intents:**
-1. **SEARCH_CLAUSES**: Use when query asks about specific clause content, coverage, or conditions
-2. **ANALYZE_RISK**: Use when query asks about risk analysis, outdated clauses, or legal disputes
-3. **COMPARE_CLAUSES**: Use when query asks to compare clauses across contracts or suppliers
-4. **SEARCH_CONTRACTS**: Use for basic contract searches (supplier, amount, date, tags)
+**Intent Selection Examples:**
 
-**Supplier-Related Intents:**
-5. **SEARCH_SUPPLIERS**: Use when query asks to find or search for suppliers
-6. **ANALYZE_SUPPLIER_RISK**: Use when query asks for supplier risk analysis or assessment
-7. **COMPARE_SUPPLIERS**: Use when query asks to compare multiple suppliers
-8. **SUPPLIER_INSIGHTS**: Use when query asks for insights, trends, or recommendations about suppliers
+| Query Pattern | Intent | Context |
+|---------------|--------|---------|
+| "Find all suppliers" | SQL_QUERY | domain=suppliers |
+| "Count contracts by status" | SQL_ANALYTICS | metrics=count |
+| "Compare supplier risk scores" | COMPARISON_QUERY | entities=suppliers |
+| "Why is this contract risky?" | GENERATE_EXPLANATION | type=reasoning |
+| "Give portfolio insights" | GENERATE_INSIGHTS | type=strategic |
 
-**Cross-System Intents:**
-9. **SUPPLIERS_WITH_RISKY_CONTRACTS**: Use when query asks for suppliers that have risky contracts
-10. **SUPPLIERS_WITH_EXPIRING_CONTRACTS**: Use when query asks for suppliers with expiring contracts
-11. **SUPPLIERS_BY_CONTRACT_CLAUSES**: Use when query asks for suppliers based on specific contract clause types
-12. **CONTRACTS_BY_SUPPLIER_RISK**: Use when query asks for contracts based on supplier risk levels
-13. **UNIFIED_RISK_SEARCH**: Use when query asks for comprehensive risk analysis across suppliers and contracts
-14. **SUPPLIERS_BY_SEMANTIC_CONTRACTS**: Use when a query references supplier context AND contract content concepts (clauses/terms) or thresholds (days, amounts, Net terms) that require semantic analysis across unstructured content (e.g., "Which vendors have termination clauses longer than 30 days?", "Find suppliers with liability caps under $1M", "Which contracts mention data security requirements?")
+**Detailed Classification Rules:**
+
+**SQL_QUERY** (~55% of queries):
+- Primary intent for most data requests
+- Covers simple to moderately complex SELECT operations
+- Basic searches, filters, lookups, standard business queries
+- Examples: "Find all suppliers in China", "Show me active contracts with Huawei", "Get users with admin role"
+
+**SQL_ANALYTICS** (~25% of queries):
+- Queries involving mathematical operations, grouping, trends, statistical analysis
+- Aggregations, statistics, trend analysis, performance metrics, dashboards
+- Examples: "What's the average risk score by country?", "Show me contract count trends over time", "Get supplier risk distribution by industry"
+
+**COMPARISON_QUERY** (~10% of queries):
+- Side-by-side comparisons, benchmarking, difference analysis
+- Supplier benchmarking, contract comparisons, risk analysis, performance comparisons
+- Examples: "Compare risk scores between Chinese and European suppliers", "Show differences in contract terms by supplier"
+
+**GENERATE_EXPLANATION** (~7% of queries):
+- Contextual explanations, reasoning, educational responses about data
+- Risk assessment explanations, methodology clarifications, business context
+- Examples: "Explain why this supplier has a high risk score", "Tell me about risk factors in telecommunications industry"
+
+**GENERATE_INSIGHTS** (~3% of queries):
+- Business intelligence, trend interpretation, strategic recommendations
+- Strategic recommendations, business insights, risk mitigation, portfolio optimization
+- Examples: "Provide insights on supplier portfolio optimization", "What trends should we watch in contract risk?"
+
+**Context Parameters:**
+Extract relevant context parameters to provide additional specificity:
+
+**Domain Context:**
+- `suppliers`: Supplier-focused queries
+- `contracts`: Contract-focused queries  
+- `organizations`: Organization management
+- `users`: User management
+- `risk`: Risk assessment and analysis
+- `compliance`: Compliance and regulatory
+
+**Query Modifiers:**
+- `time_scope`: today, this_week, this_month, this_year, custom_range
+- `risk_level`: low, medium, high, critical
+- `status`: active, inactive, expired, pending
+- `filters`: geographic, industry, size, temporal
 
 Respond in this exact JSON format:
 {{
     "intent": "INTENT_NAME",
     "confidence": 0.95,
-    "reasoning": "Brief explanation of why this intent was chosen"
+    "reasoning": "Brief explanation of why this intent was chosen",
+    "context_parameters": {{
+        "domain": "suppliers|contracts|organizations|users|risk|compliance",
+        "time_scope": "today|this_week|this_month|this_year|custom_range",
+        "risk_level": "low|medium|high|critical",
+        "status": "active|inactive|expired|pending",
+        "filters": ["geographic", "industry", "size", "temporal"]
+    }}
 }}"""
     
     def _build_multi_part_detection_prompt(self) -> str:
-        """Build the system prompt for multi-part query detection"""
+        """Build the system prompt for multi-part query detection v2.0"""
         
         tools_description = "\n".join([
             f"- {tool['name']}: {tool['description']}"
@@ -430,15 +395,15 @@ Available intents for classification:
 Your task is to determine if a query has multiple parts and decompose it into components.
 
 **Multi-Part Query Patterns:**
-1. **Retrieval + Explanation**: "Find contracts with arbitration in Singapore, then explain why contracts use Singapore arbitration"
+1. **Retrieval + Explanation**: "Find high-risk suppliers in China, then explain why Chinese suppliers have higher risk"
 2. **Retrieval + Insights**: "Find suppliers in China, and tell me about semiconductor suppliers in China"
 3. **Search + Analysis**: "Show me risky suppliers, then analyze their risk patterns"
 4. **Data + Context**: "Get expiring contracts, then explain renewal best practices"
 
 **Component Types:**
-- **retrieval**: Queries that ask for specific data, contracts, suppliers, or search results
-- **explanation**: Queries that ask for explanations, reasons, or context about retrieved data
-- **insights**: Queries that ask for analysis, trends, or recommendations
+- **retrieval**: Queries that ask for specific data, contracts, suppliers, or search results (SQL_QUERY, SQL_ANALYTICS, COMPARISON_QUERY)
+- **explanation**: Queries that ask for explanations, reasons, or context about retrieved data (GENERATE_EXPLANATION)
+- **insights**: Queries that ask for analysis, trends, or recommendations (GENERATE_INSIGHTS)
 
 **Detection Rules:**
 1. Look for connecting words: "then", "and", "also", "plus", "furthermore", "additionally"
@@ -447,27 +412,27 @@ Your task is to determine if a query has multiple parts and decompose it into co
 
 **Examples:**
 
-Query: "Find me contracts whose arbitration is in Singapore, then give reasons why this type of contracts is governed in Singapore"
+Query: "Find high-risk suppliers in China, then explain why Chinese suppliers have higher risk"
 Response:
 {{
     "is_multi_part": true,
     "components": [
         {{
             "component_type": "retrieval",
-            "intent": "SEARCH_CONTRACTS",
+            "intent": "SQL_QUERY",
             "confidence": 0.95,
-            "reasoning": "User wants to find contracts with specific arbitration clause",
-            "query_text": "Find me contracts whose arbitration is in Singapore"
+            "reasoning": "User wants to find suppliers with specific criteria",
+            "query_text": "Find high-risk suppliers in China"
         }},
         {{
             "component_type": "explanation",
             "intent": "GENERATE_EXPLANATION",
             "confidence": 0.90,
-            "reasoning": "User wants explanation about Singapore arbitration governance",
-            "query_text": "give reasons why this type of contracts is governed in Singapore"
+            "reasoning": "User wants explanation about risk factors",
+            "query_text": "explain why Chinese suppliers have higher risk"
         }}
     ],
-    "primary_intent": "SEARCH_CONTRACTS",
+    "primary_intent": "SQL_QUERY",
     "overall_confidence": 0.92,
     "reasoning": "Query combines data retrieval with explanation request"
 }}
@@ -476,7 +441,7 @@ Query: "Find me suppliers in China"
 Response:
 {{
     "is_multi_part": false,
-    "primary_intent": "SEARCH_SUPPLIERS",
+    "primary_intent": "SQL_QUERY",
     "confidence": 0.95,
     "reasoning": "Single intent query asking for supplier search"
 }}

@@ -120,11 +120,18 @@ For supplier-related queries, extract these parameters when mentioned:
 - country: Country (string)
 - countries: List of countries (array of strings)
 - risk_level: Risk level like "low", "medium", "high", "critical" (string)
+- min_risk_score: Minimum risk score threshold (number, e.g., "above 50" -> 50)
+- max_risk_score: Maximum risk score threshold (number, e.g., "below 80" -> 80)
 - company_size: Company size like "small", "medium", "large" (string)
 - is_watchlisted: Whether supplier is watchlisted (boolean)
 - has_contracts: Whether supplier has contracts (boolean)
 - contract_count_min: Minimum number of contracts (number)
 - contract_count_max: Maximum number of contracts (number)
+
+IMPORTANT: For risk score queries like "above 50", "below 80", "between 60 and 90":
+- Extract "above X" as min_risk_score: X
+- Extract "below X" as max_risk_score: X  
+- Extract "between X and Y" as min_risk_score: X, max_risk_score: Y
 
 Return only the parameters that are explicitly mentioned in the query.
 """
@@ -173,6 +180,11 @@ For enhanced supplier-contract relationship queries, extract these parameters wh
 - contract_count_max: Maximum number of contracts per supplier (number)
 - total_contract_value_min: Minimum total contract value across all contracts (number)
 - total_contract_value_max: Maximum total contract value across all contracts (number)
+
+IMPORTANT: For contract value queries like "over $5 million", "under $1 million", "between $2M and $10M":
+- Extract "over X" as contract_value_min: X
+- Extract "under X" as contract_value_max: X
+- Extract "between X and Y" as contract_value_min: X, contract_value_max: Y
 
 Return only the parameters that are explicitly mentioned in the query.
 """

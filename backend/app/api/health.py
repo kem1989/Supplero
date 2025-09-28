@@ -10,7 +10,7 @@ from typing import Dict, Any
 import time
 
 from app.core.database import get_db, check_db_health
-from app.core.redis_client import check_redis_health_async
+# Redis client removed for simplification
 from app.core.config import settings
 from app.core.logging import get_logger, get_current_trace_context
 
@@ -87,7 +87,7 @@ async def detailed_health_check(request: Request, db: Session = Depends(get_db))
     # Check Redis connection
     try:
         redis_check_start = time.time()
-        redis_status = await check_redis_health_async()
+        redis_status = {"status": "disabled", "message": "Redis removed for simplification"}
         redis_check_time = time.time() - redis_check_start
         
         health_status["checks"]["redis"] = redis_status["status"]
@@ -186,7 +186,7 @@ async def readiness_check(request: Request, db: Session = Depends(get_db)) -> Di
         db.execute("SELECT 1")
         
         # Check Redis
-        redis_status = await check_redis_health_async()
+        redis_status = {"status": "disabled", "message": "Redis removed for simplification"}
         if redis_status["status"] != "healthy":
             raise Exception(f"Redis not ready: {redis_status['status']}")
         

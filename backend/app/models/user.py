@@ -40,8 +40,6 @@ class User(Base):
     
     # Relationships
     organization = relationship("Organization", back_populates="users")
-    documents = relationship("Document", back_populates="user")
-    document_changes = relationship("DocumentVersion", back_populates="changed_by_user")
     
     def __repr__(self):
         return f"<User(id={self.id}, email='{self.email}', role='{self.role}')>"

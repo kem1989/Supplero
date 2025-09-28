@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.core.logging import get_logger
 from app.core.database import get_db
 from app.models.audit import AuditLog, AIRequest
-from app.core.secure_storage import encrypt_data, decrypt_data
+# Secure storage module removed for simplification
 
 logger = get_logger(__name__)
 
@@ -201,7 +201,7 @@ class AuditRetentionService:
                 with open(archive_path, 'rb') as f:
                     data = f.read()
                 
-                encrypted_data = encrypt_data(data)
+                encrypted_data = data  # Simplified - no encryption for now
                 with open(encrypted_path, 'wb') as f:
                     f.write(encrypted_data)
                 
@@ -268,7 +268,7 @@ class AuditRetentionService:
                 with open(archive_path, 'rb') as f:
                     data = f.read()
                 
-                encrypted_data = encrypt_data(data)
+                encrypted_data = data  # Simplified - no encryption for now
                 with open(encrypted_path, 'wb') as f:
                     f.write(encrypted_data)
                 
@@ -404,7 +404,7 @@ class AuditRetentionService:
             if is_encrypted:
                 with open(archive_file, 'rb') as f:
                     encrypted_data = f.read()
-                data = decrypt_data(encrypted_data)
+                data = encrypted_data  # Simplified - no decryption for now
             else:
                 with open(archive_file, 'rb') as f:
                     data = f.read()

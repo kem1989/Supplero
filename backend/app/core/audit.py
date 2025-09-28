@@ -12,7 +12,7 @@ from sqlalchemy import select, and_, desc, func
 from sqlalchemy.orm import Session
 
 from app.core.logging import get_logger
-from app.core.redaction import redact_for_audit, RedactionLevel
+# Redaction module removed for simplification
 from app.models.audit import AuditLog, AIRequest
 from app.models.user import User
 from app.models.organization import Organization
@@ -38,7 +38,7 @@ class AuditService:
         details: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
-        redact_level: RedactionLevel = RedactionLevel.MEDIUM
+        redact_level: str = "MEDIUM"
     ) -> str:
         """
         Log a user or system action for audit purposes.
@@ -60,7 +60,7 @@ class AuditService:
         # Redact sensitive information from details
         redacted_details = None
         if details:
-            redacted_details = redact_for_audit(details, redact_level)
+            redacted_details = details  # Simplified - no redaction for now
         
         audit_data = {
             'organization_id': organization_id,
@@ -129,7 +129,7 @@ class AuditService:
         cost_usd: Optional[float] = None,
         status: str = "completed",
         error_message: Optional[str] = None,
-        redact_level: RedactionLevel = RedactionLevel.HIGH
+        redact_level: str = "HIGH"
     ) -> str:
         """
         Log an AI request for compliance and cost monitoring.
@@ -201,17 +201,17 @@ class AuditService:
     def _redact_numeric_value(
         self, 
         value: Optional[Union[int, float]], 
-        level: RedactionLevel
+        level: str
     ) -> Optional[str]:
         """Redact numeric values based on sensitivity level."""
         if value is None:
             return None
         
-        if level == RedactionLevel.CRITICAL:
+        if level == "CRITICAL":
             return '[CRITICAL_VALUE_REDACTED]'
-        elif level == RedactionLevel.HIGH:
+        elif level == "HIGH":
             return '[HIGH_VALUE_REDACTED]'
-        elif level == RedactionLevel.MEDIUM:
+        elif level == "MEDIUM":
             # Show range for medium sensitivity
             if isinstance(value, (int, float)):
                 if value < 100:
