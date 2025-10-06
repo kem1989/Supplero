@@ -46,7 +46,7 @@ An enterprise-grade platform that leverages AI to transform procurement processe
 - **Frontend**: Next.js React application with modern UI components
 - **Database**: PostgreSQL for structured data storage
 - **Cache**: Redis for session management and caching
-- **Search**: Elasticsearch for document search and embeddings
+- **Search**: Elasticsearch for document search
 - **AI**: OpenAI GPT-4 and Vision API for intelligent analysis
 - **External Data**: News APIs, financial data APIs for supplier risk assessment
 

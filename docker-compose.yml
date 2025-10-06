@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  # PostgreSQL Database with pgvector support
+  # PostgreSQL Database
   postgres:
-    image: pgvector/pgvector:pg15
+    image: postgres:15
     container_name: supplero-postgres
     environment:
       POSTGRES_DB: supplero
@@ -107,7 +107,7 @@ services:
       - supplero-network
     command: npm run dev
 
-  # Elasticsearch (for search and embeddings)
+  # Elasticsearch (for search)
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
     container_name: supplero-elasticsearch

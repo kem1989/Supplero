@@ -4,13 +4,11 @@
 - **Supplier core**
   - suppliers: core profile, org_id, lifecycle flags
   - supplier_profiles: time-versioned attributes (size, industry, geography)
-  - supplier_embeddings: vector for semantic search over profiles
 - **Contracts and documents**
   - contracts: contract-level entity (type, status, effective_at, expires_at, auto_renewal, governing_law, jurisdiction)
   - contract_parties: internal party, counterparty, roles
   - contract_terms: normalized key terms (payment, termination, liability caps, SLAs)
   - contract_clauses: clause instances with canonical type, text spans, risk flags
-  - clause_embeddings: vector per clause for semantic/RAG
   - contract_documents: link to `documents` (source artifact, versions)
 - **Risk and signals**
   - risk_assessments: time-series per supplier (and optionally per contract), category scores (financial, ESG, operational, compliance), overall_score, source, inputs_snapshot, reasoning
@@ -27,7 +25,6 @@
   - jobs: ingestion jobs, schedules, last_run, run_state, retry/backoff metadata
 - **Indexes and search**
   - text indexes on names, parties, clauses
-  - vector indexes on supplier_embeddings, clause_embeddings
   - composite indexes for time-window and status queries (expires_at, auto_renewal, risk_level)
 
 ### Ingestion & enrichment architecture
@@ -39,11 +36,11 @@
   - Financials: quarterly pulls (public) or ERP integration (private); standardize to common schema with units/currency
   - ESG: provider API with methodology versioning; store raw + normalized
 - **Contract pipeline**
-  - Upload → OCR (if needed) → text extraction → metadata extraction → clause classification → embeddings → linkage to supplier(s)
+  - Upload → OCR (if needed) → text extraction → metadata extraction → clause classification → linkage to supplier(s)
   - Provenance log: model/version, prompts, confidence, chunks used
   - QA gates: quality scores, human validation tasks for low-confidence extractions
 - **Matching & linking**
-  - Supplier resolution: rules + embeddings + org scoping; store match_confidence and alternative candidates
+  - Supplier resolution: rules + org scoping; store match_confidence and alternative candidates
   - Contract-to-supplier linkage: deterministic (IDs, emails, legal names) fallback to fuzzy/semantic; human override path
 - **Idempotency, retries, and backpressure**
   - Source-side cursors or since_timestamps; job_run_id; exactly-once upserts by natural keys
@@ -69,11 +66,11 @@
 - **Parameter extraction**
   - Supplier names, time windows, categories (financial/ESG/ops), thresholds, jurisdictions, benchmarks, comparison sets
 - **Execution routing**
-  - Handlers call prebuilt query functions over normalized schema and vector search where needed
+  - Handlers call prebuilt query functions over normalized schema and text search where needed
 - **Confidence & grounding**
   - Low-confidence clarifications; cite sources (contract IDs, clause excerpts, news links); show reasoning and inputs
 - **RAG/semantic**
-  - Use clause_embeddings and supplier_embeddings to answer clause-level and profile-level semantic queries with citations
+  - Use text search and fuzzy matching to answer clause-level and profile-level queries with citations
 
 ### Monitoring, alerts, and subscriptions
 - **Alerting model**

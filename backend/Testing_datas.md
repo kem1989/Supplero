@@ -40,14 +40,6 @@
       "aliases": ["Huawei", "Huawei Technologies"]
     }
   ],
-  "supplier_embeddings": [
-    {
-      "supplier_id": 1001,
-      "vector": "EMBEDDING_PLACEHOLDER",
-      "model": "text-embedding-3-large",
-      "created_at": "2025-09-26T00:00:00Z"
-    }
-  ],
   "risk_assessments": [
     {
       "id": 50001,
@@ -133,12 +125,6 @@
       "text_excerpt": "Any dispute shall be settled by arbitration in London..."
     }
   ],
-  "clause_embeddings": [
-    { "clause_id": 30001, "vector": "EMBEDDING_PLACEHOLDER", "model": "text-embedding-3-large" },
-    { "clause_id": 30002, "vector": "EMBEDDING_PLACEHOLDER", "model": "text-embedding-3-large" },
-    { "clause_id": 30003, "vector": "EMBEDDING_PLACEHOLDER", "model": "text-embedding-3-large" },
-    { "clause_id": 30004, "vector": "EMBEDDING_PLACEHOLDER", "model": "text-embedding-3-large" }
-  ],
   "contract_documents": [
     {
       "contract_id": 20001,
@@ -154,7 +140,6 @@
 ### Notes
 - IDs are illustrative and can be changed to match your environment.
 - Dates use ISO-8601; currency is USD for clarity.
-- EMBEDDING_PLACEHOLDER indicates where vectors would be stored by your embedding pipeline.
 - These examples align with the “Target data model” in `Future_Update.md` and can be converted into SQL/CSV seed data as needed.
 
 
