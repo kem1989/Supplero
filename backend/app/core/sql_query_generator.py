@@ -451,6 +451,51 @@ class SQLQueryGenerator:
                 estimated_complexity="simple"
             )
         
+        # Suppliers listing/search patterns
+        elif "supplier" in query_lower and "contract" not in query_lower:
+            # Try to extract a simple country filter: e.g., "in china" or "from china"
+            country_match = re.search(r"\b(in|from)\s+([a-zA-Z\s]+)", query_lower)
+            if country_match:
+                country = country_match.group(2).strip()
+                sql = (
+                    "SELECT s.id, s.name, s.industry, s.country, s.company_size, "
+                    "s.current_risk_score, s.current_risk_level "
+                    "FROM suppliers s "
+                    "WHERE s.organization_id = :organization_id "
+                    "AND LOWER(s.country) LIKE :country "
+                    "ORDER BY s.current_risk_score DESC"
+                )
+                return SQLQueryResult(
+                    query=sql,
+                    query_type=QueryType.SELECT,
+                    parameters={
+                        "organization_id": organization_id,
+                        "country": f"%{country}%",
+                    },
+                    tables=["suppliers"],
+                    confidence=0.9,
+                    reasoning="Matched supplier search with country filter",
+                    estimated_complexity="simple",
+                )
+            else:
+                # Generic suppliers list for organization
+                sql = (
+                    "SELECT s.id, s.name, s.industry, s.country, s.company_size, "
+                    "s.current_risk_score, s.current_risk_level "
+                    "FROM suppliers s "
+                    "WHERE s.organization_id = :organization_id "
+                    "ORDER BY s.current_risk_score DESC"
+                )
+                return SQLQueryResult(
+                    query=sql,
+                    query_type=QueryType.SELECT,
+                    parameters={"organization_id": organization_id},
+                    tables=["suppliers"],
+                    confidence=0.85,
+                    reasoning="Matched generic supplier listing pattern",
+                    estimated_complexity="simple",
+                )
+
         elif "supplier" in query_lower and "risk" in query_lower:
             if "watchlisted" in query_lower or "watchlist" in query_lower:
                 sql = self.query_patterns["watchlisted_suppliers"]

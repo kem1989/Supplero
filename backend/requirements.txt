@@ -32,6 +32,7 @@ opencv-python-headless==4.8.1.78
 
 # Security and authentication
 cryptography>=42.0.0
+bcrypt==3.2.2
 httpx==0.25.2
 aiohttp==3.9.1
 
