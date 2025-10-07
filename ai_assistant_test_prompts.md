@@ -41,7 +41,7 @@ WHERE is_watchlisted = true;
 ---
 
 ## Test Prompt 3: Contract and Financial Analysis Query
-**Prompt:** "Show me all active contracts with their values and the suppliers' financial health scores"
+**Prompt:** "Show me all active contracts with their values and the suppliers financial health scores"
 
 **Expected SQL:**
 ```sql

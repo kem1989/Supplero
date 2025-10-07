@@ -109,20 +109,20 @@ class SQLQueryGenerator:
         """Build common query patterns for quick matching"""
         return {
             "suppliers_by_risk": """
-                SELECT s.name, s.current_risk_score, s.current_risk_level, s.industry, s.country
+                SELECT s.id as supplier_id, s.name as supplier_name, s.current_risk_score, s.current_risk_level, s.industry, s.country
                 FROM suppliers s
                 WHERE s.organization_id = :organization_id 
                 AND s.current_risk_level = :risk_level
                 ORDER BY s.current_risk_score DESC
             """,
             "suppliers_with_risk_scores": """
-                SELECT s.name, s.current_risk_score, s.current_risk_level, s.geopolitical_risk, s.financial_risk, s.operational_risk, s.compliance_risk, s.esg_risk
+                SELECT s.id as supplier_id, s.name as supplier_name, s.current_risk_score, s.current_risk_level, s.geopolitical_risk, s.financial_risk, s.operational_risk, s.compliance_risk, s.esg_risk
                 FROM suppliers s
                 WHERE s.organization_id = :organization_id
                 ORDER BY s.current_risk_score DESC
             """,
             "watchlisted_suppliers": """
-                SELECT s.name, s.geopolitical_risk, s.watchlist_reason, s.current_risk_level
+                SELECT s.id as supplier_id, s.name as supplier_name, s.geopolitical_risk, s.watchlist_reason, s.current_risk_level
                 FROM suppliers s
                 WHERE s.organization_id = :organization_id 
                 AND s.is_watchlisted = true
@@ -214,10 +214,14 @@ class SQLQueryGenerator:
             # First, try to match against common patterns
             pattern_result = self._try_pattern_matching(natural_language_query, intent_type, parameters, organization_id)
             if pattern_result:
+                # Ensure standard aliases/IDs so frontend can link reliably
+                pattern_result.query = self._ensure_standard_aliases(pattern_result.query)
                 return pattern_result
             
             # If no pattern matches, use AI to generate SQL
-            return await self._generate_sql_with_ai(natural_language_query, intent_type, parameters, organization_id)
+            ai_result = await self._generate_sql_with_ai(natural_language_query, intent_type, parameters, organization_id)
+            ai_result.query = self._ensure_standard_aliases(ai_result.query)
+            return ai_result
             
         except Exception as e:
             logger.error("Failed to generate SQL query", error=str(e))
@@ -297,6 +301,94 @@ class SQLQueryGenerator:
             requirements["complexity"] = "medium"
         
         return requirements
+
+    def _ensure_standard_aliases(self, sql: str) -> str:
+        """Ensure generated SQL selects standardized aliases and IDs for linking.
+        - Adds supplier_id and supplier_name alias if suppliers are referenced
+        - Adds contract_id and contract_title alias if contracts are referenced
+        Heuristic string transforms; safe for common SELECT ... FROM ... queries.
+        """
+        try:
+            if not sql:
+                return sql
+
+            # Case-insensitive detection of SELECT and FROM
+            upper_sql = sql.upper()
+            sel_idx = upper_sql.find("SELECT")
+            from_idx = upper_sql.find("FROM")
+            if sel_idx == -1 or from_idx == -1 or from_idx <= sel_idx:
+                return sql
+
+            # Extract parts preserving original casing
+            prefix = sql[:sel_idx]
+            select_part = sql[sel_idx + len("SELECT"):from_idx]
+            suffix = sql[from_idx + len("FROM"):]
+            select_fields = select_part.strip()
+
+            modified = False
+
+            # Detect supplier alias (prefer ' s ' but fallback to table name)
+            suppliers_alias = None
+            if " suppliers s" in sql or " SUPPLIERS S" in upper_sql:
+                suppliers_alias = "s"
+            elif " suppliers " in sql or " SUPPLIERS " in upper_sql:
+                suppliers_alias = "suppliers"
+
+            # Detect contracts alias
+            contracts_alias = None
+            if " contracts c" in sql or " CONTRACTS C" in upper_sql:
+                contracts_alias = "c"
+            elif " contracts " in sql or " CONTRACTS " in upper_sql:
+                contracts_alias = "contracts"
+
+            fields_list = [f.strip() for f in select_fields.split(",") if f.strip()]
+
+            def has_field_alias(alias_name: str) -> bool:
+                alias_upper = alias_name.upper()
+                return any(
+                    (" AS " in f.upper() and f.split(" AS ")[-1].strip().upper() == alias_upper)
+                    or f.strip().upper() == alias_upper
+                    for f in fields_list
+                )
+
+            def add_field(expr: str):
+                nonlocal modified
+                fields_list.insert(0, expr)
+                modified = True
+
+            # Ensure supplier_id and supplier_name
+            if suppliers_alias:
+                if not has_field_alias("supplier_id"):
+                    add_field(f"{suppliers_alias}.id as supplier_id")
+                # Ensure supplier_name alias from name if not already
+                if not has_field_alias("supplier_name"):
+                    # Try to find a plain name field to alias
+                    for i, f in enumerate(fields_list):
+                        fu = f.upper()
+                        if fu.startswith(f"{suppliers_alias.upper()}.NAME") and " AS " not in fu:
+                            fields_list[i] = f"{suppliers_alias}.name as supplier_name"
+                            modified = True
+                            break
+
+            # Ensure contract_id and contract_title
+            if contracts_alias:
+                if not has_field_alias("contract_id"):
+                    add_field(f"{contracts_alias}.id as contract_id")
+                if not has_field_alias("contract_title"):
+                    for i, f in enumerate(fields_list):
+                        fu = f.upper()
+                        if fu.startswith(f"{contracts_alias.upper()}.TITLE") and " AS " not in fu:
+                            fields_list[i] = f"{contracts_alias}.title as contract_title"
+                            modified = True
+                            break
+
+            if not modified:
+                return sql
+
+            new_select = ", ".join(fields_list)
+            return f"{prefix}SELECT {new_select} FROM{suffix}"
+        except Exception:
+            return sql
     
     def _build_dynamic_query(self, query: str, requirements: Dict[str, Any], organization_id: int) -> Optional[SQLQueryResult]:
         """Build a dynamic query based on analyzed requirements"""
@@ -310,6 +402,7 @@ class SQLQueryGenerator:
         # Add supplier fields if needed
         if requirements["needs_suppliers"]:
             select_fields.extend([
+                "s.id as supplier_id",
                 "s.name as supplier_name",
                 "s.current_risk_score",
                 "s.current_risk_level",
@@ -324,6 +417,7 @@ class SQLQueryGenerator:
         # Add contract fields if needed
         if requirements["needs_contracts"]:
             select_fields.extend([
+                "c.id as contract_id",
                 "c.title as contract_title",
                 "c.contract_value",
                 "c.currency",
@@ -451,8 +545,12 @@ class SQLQueryGenerator:
                 estimated_complexity="simple"
             )
         
-        # Suppliers listing/search patterns
-        elif "supplier" in query_lower and "contract" not in query_lower:
+        # Suppliers listing/search patterns (ensure we don't swallow more specific intents)
+        elif (
+            "supplier" in query_lower
+            and "contract" not in query_lower
+            and not any(k in query_lower for k in ["watchlist", "watchlisted", "geopolitical", "risk"])
+        ):
             # Try to extract a simple country filter: e.g., "in china" or "from china"
             country_match = re.search(r"\b(in|from)\s+([a-zA-Z\s]+)", query_lower)
             if country_match:

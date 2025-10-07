@@ -125,76 +125,78 @@ function ResponseView({ result, onClose }: { result: Record<string, any>; onClos
 }
 
 function DynamicResponseRenderer({ result, onClose }: { result: Record<string, any>; onClose: () => void }) {
+  const originalQuery: string = typeof result?.query === 'string' ? result.query : '';
+  const hasResultsArray = Array.isArray(result?.results) && result.results.length >= 0;
   const renderers = [
     // Primary message
-    () => result?.message && (
+    () => !hasResultsArray && result?.message && (
       <div className="text-base text-slate-100 mb-4">{result.message}</div>
     ),
     
     // Summary information
-    () => result?.summary && typeof result.summary === "string" && (
+    () => !hasResultsArray && result?.summary && typeof result.summary === "string" && (
       <div className="text-sm text-slate-200 mb-4 p-3 bg-slate-900/40 rounded-lg">
         {result.summary}
       </div>
     ),
     
     // Analysis summaries (risk, supplier, contract analysis)
-    () => result?.analysis_summary && (
+    () => !hasResultsArray && result?.analysis_summary && (
       <AnalysisSummaryCard data={result.analysis_summary} />
     ),
     
     // Risk distribution
-    () => result?.risk_distribution && (
+    () => !hasResultsArray && result?.risk_distribution && (
       <RiskDistributionCard data={result.risk_distribution} />
     ),
     
     // Risk analyses (detailed risk breakdown)
-    () => result?.risk_analyses && Array.isArray(result.risk_analyses) && (
+    () => !hasResultsArray && result?.risk_analyses && Array.isArray(result.risk_analyses) && (
       <RiskAnalysesCard data={result.risk_analyses} />
     ),
     
     // Analytics results (generic results array)
     () => result?.results && Array.isArray(result.results) && (
-      <AnalyticsResultsCard data={result.results} onClose={onClose} />
+      <AnalyticsResultsCard data={result.results} onClose={onClose} originalQuery={originalQuery} />
     ),
     
     // Suppliers data
-    () => result?.suppliers && Array.isArray(result.suppliers) && (
+    () => !hasResultsArray && result?.suppliers && Array.isArray(result.suppliers) && (
       <SuppliersCard data={result.suppliers} onClose={onClose} />
     ),
     
     // Contracts data
-    () => result?.contracts && Array.isArray(result.contracts) && (
+    () => !hasResultsArray && result?.contracts && Array.isArray(result.contracts) && (
       <ContractsCard data={result.contracts} onClose={onClose} />
     ),
     
     // Search insights
-    () => result?.search_insights && (
+    () => !hasResultsArray && result?.search_insights && (
       <SearchInsightsCard data={result.search_insights} />
     ),
     
     // Portfolio insights
-    () => result?.insights && (
+    () => !hasResultsArray && result?.insights && (
       <PortfolioInsightsCard data={result.insights} />
     ),
     
     // Recommendations
-    () => result?.recommendations && Array.isArray(result.recommendations) && (
+    () => !hasResultsArray && result?.recommendations && Array.isArray(result.recommendations) && (
       <RecommendationsCard data={result.recommendations} />
     ),
     
     // Citations
-    () => result?.citations && Array.isArray(result.citations) && (
+    () => !hasResultsArray && result?.citations && Array.isArray(result.citations) && (
       <CitationsCard data={result.citations} onClose={onClose} />
     ),
     
     // Generic items list
-    () => result?.items && Array.isArray(result.items) && (
+    () => !hasResultsArray && result?.items && Array.isArray(result.items) && (
       <ItemsListCard data={result.items} />
     ),
     
     // Generic data display for any structured data
-    () => result && typeof result === 'object' && !Array.isArray(result) && (
+    () => !hasResultsArray && result && typeof result === 'object' && !Array.isArray(result) && (
       <GenericDataCard data={result} />
     ),
     
@@ -442,7 +444,7 @@ function SuppliersCard({ data, onClose }: { data: any[]; onClose: () => void }) 
   );
 }
 
-function AnalyticsResultsCard({ data, onClose }: { data: any[]; onClose: () => void }) {
+function AnalyticsResultsCard({ data, onClose, originalQuery }: { data: any[]; onClose: () => void; originalQuery?: string }) {
   if (!data || data.length === 0) {
     return (
       <div className="space-y-3">
@@ -454,26 +456,44 @@ function AnalyticsResultsCard({ data, onClose }: { data: any[]; onClose: () => v
     );
   }
 
+  // Build a field whitelist from the original natural language query when possible
+  const allowAll = !originalQuery || originalQuery.trim().length < 3;
+  const whitelist = buildFieldWhitelist(originalQuery);
+
   return (
     <div className="space-y-3">
       <h4 className="font-medium text-slate-200">Analytics Results</h4>
       <div className="space-y-2">
-        {data.map((result, idx) => (
-          <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
-            <div className="space-y-2">
-              {Object.entries(result).map(([key, value]) => (
-                <div key={key} className="flex justify-between">
-                  <span className="text-sm text-slate-400 capitalize">
-                    {key.replace(/_/g, ' ')}:
-                  </span>
-                  <span className="text-sm text-slate-200">
-                    {typeof value === 'number' ? value.toFixed(2) : String(value)}
-                  </span>
-                </div>
-              ))}
+        {data.map((result, idx) => {
+          const contractId = result?.contract_id || result?.id;
+          const supplierId = result?.supplier_id;
+          return (
+            <div key={idx} className="border rounded-lg p-3 bg-slate-900/40">
+              <div className="flex items-center justify-end gap-3 mb-2">
+                {supplierId && (
+                  <DeepLink label="View Supplier" href={buildSupplierHref(supplierId)} onClose={onClose} />
+                )}
+                {contractId && (
+                  <DeepLink label="View Contract" href={buildContractInDocumentsHref(contractId)} onClose={onClose} />
+                )}
+              </div>
+              <div className="space-y-2">
+                {Object.entries(result)
+                  .filter(([key]) => allowAll || whitelist.has(key))
+                  .map(([key, value]) => (
+                    <div key={key} className="flex justify-between">
+                      <span className="text-sm text-slate-400 capitalize">
+                        {key.replace(/_/g, ' ')}:
+                      </span>
+                      <span className="text-sm text-slate-200">
+                        {typeof value === 'number' ? value.toFixed(2) : String(value)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -495,7 +515,7 @@ function ContractsCard({ data, onClose }: { data: any[]; onClose: () => void }) 
               </div>
               <DeepLink 
                 label="View" 
-                href={buildDocumentHref(contract.id)} 
+                href={buildDocumentHref(contract.id || contract.contract_id)} 
                 onClose={onClose} 
               />
             </div>
@@ -670,9 +690,9 @@ function LinkedResults({ contracts, suppliers, onClose }: { contracts: any[]; su
           <h4 className="font-medium text-sm mb-1 text-slate-2 00">Contracts</h4>
           <ul className="space-y-2">
             {contracts.map((c: any, idx: number) => {
-              const id = c?.id || c?.document_id || c?.documentId;
+              const id = c?.id || c?.contract_id || c?.document_id || c?.documentId;
               const name = c?.title || c?.name || `Contract ${id}`;
-              const href = c?.href || buildDocumentHref(id);
+              const href = c?.href || buildContractInDocumentsHref(id);
               return (
                 <li key={idx} className="text-sm">
                   <DeepLink label={name} href={href} onClose={onClose} />
@@ -729,6 +749,66 @@ function buildSupplierHref(id?: string | number) {
   const params = new URLSearchParams();
   params.set("ids", String(id));
   return `/suppliers?${params.toString()}`;
+}
+
+function buildContractInDocumentsHref(id?: string | number) {
+  if (!id) return undefined;
+  const params = new URLSearchParams();
+  params.set("contractId", String(id));
+  return `/documents?${params.toString()}`;
+}
+
+// Very simple term-to-field mapping to hide non-requested fields
+function buildFieldWhitelist(query?: string): Set<string> {
+  const set = new Set<string>();
+  if (!query) return set;
+  const q = query.toLowerCase();
+  const add = (k: string) => set.add(k);
+
+  // Supplier name
+  if (q.includes("supplier") || q.includes("suppliers")) {
+    add("supplier_name");
+    add("supplier_id"); // keep id for link context
+  }
+
+  // Contract title/value/currency/status
+  if (q.includes("contract")) {
+    add("contract_title");
+    add("contract_value");
+    add("currency");
+    add("contract_status");
+    add("contract_id"); // keep id for link context
+  }
+
+  // Financial health score
+  if (q.includes("financial health")) {
+    add("financial_health_score");
+  }
+
+  // Watchlist related
+  if (q.includes("watchlisted") || q.includes("watchlist")) {
+    add("is_watchlisted");
+    add("watchlist_reason");
+  }
+
+  // Values
+  if (q.includes("value")) {
+    add("contract_value");
+  }
+
+  // Risk words could appear; only include if explicitly asked
+  if (/\brisk\b|risk score|risk level/.test(q)) {
+    add("current_risk_score");
+    add("current_risk_level");
+  }
+
+  // Geopolitical
+  if (q.includes("geopolitical")) {
+    add("geopolitical_risk");
+  }
+
+  // If the query is very broad, fallback to showing all
+  return set;
 }
 
 function GenericDataCard({ data }: { data: Record<string, any> }) {
